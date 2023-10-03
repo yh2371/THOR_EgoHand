@@ -277,6 +277,7 @@ class RoIHeads(nn.Module):
         losses = {}
 
         if self.training:
+            
             assert labels is not None and regression_targets is not None
             # loss_classifier, loss_box_reg = fastrcnn_loss(
             #     class_logits, box_regression, labels, regression_targets)
@@ -285,6 +286,7 @@ class RoIHeads(nn.Module):
                 #"loss_classifier": loss_classifier,
                 "loss_box_reg": loss_box_reg
             }
+            
         else:
             boxes, scores, labels = self.postprocess_detections(class_logits, box_regression, proposals, image_shapes)
             num_images = len(boxes)

@@ -25,9 +25,13 @@ class Dataset(data.Dataset):
 
         # TODO: add depth transformation
         self.load_set = load_set  # 'train','val','test'
-        self.images = np.load(os.path.join(root, load_set, 'images.npy'))# % self.load_set))
-        self.points2d = np.load(os.path.join(root, load_set, 'points2d.npy'))# % self.load_set))
-        self.points3d = np.load(os.path.join(root, load_set, 'points3d.npy'))# % self.load_set))
+        print(load_set)
+        self.images = np.load(os.path.join(root, f'{load_set}_images.npy'))# % self.load_set))
+        self.points2d = np.load(os.path.join(root, f'{load_set}_points2d.npy'))# % self.load_set))
+        self.points3d = np.load(os.path.join(root, f'{load_set}_points3d.npy'))# % self.load_set))
+        print(self.points3d.shape)
+        print(self.points2d.shape)
+        print(len(self.images))
 
         #self.mesh2d = np.load(os.path.join(root, 'mesh2d-%s.npy' % self.load_set))
         #self.mesh3d = np.load(os.path.join(root, 'mesh3d-%s.npy' % self.load_set))
@@ -93,7 +97,7 @@ class Dataset(data.Dataset):
             'mesh3d': mesh3d,
             'palm': torch.Tensor(palm[np.newaxis, ...]).float()
         }
-
+        
         return data
 
     def __len__(self):

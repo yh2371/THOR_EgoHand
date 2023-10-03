@@ -21,10 +21,22 @@ from utils.h2o_utils.h2o_preprocessing_utils import MyPreprocessor
 
 from models.thor_net import create_thor
 
+CUDA_LAUNCH_BLOCKING=1
+### WANDB Setup ###
+import wandb
+wandb.login()
+
 torch.multiprocessing.set_sharing_strategy('file_system')
 
 args = parse_args_function()
 
+project_name = 'THOR'
+run = wandb.init(
+    # Set the project where this run will be logged
+    project=project_name,
+    # Track hyperparameters and run metadata
+    config=args)
+    
 # Define device
 device = torch.device(f'cuda:{args.gpu_number[0]}' if torch.cuda.is_available() else 'cpu')
 
@@ -32,7 +44,8 @@ use_cuda = False
 if torch.cuda.is_available():
     use_cuda = True
 
-num_kps2d, num_kps3d, num_verts = calculate_keypoints(args.dataset_name, args.object)
+num_kps2d, num_kps3d, num_verts = calculate_keypoints(args.dataset_name, args.object) #21, 21, _
+print("2D", num_kps2d, "3D", num_kps3d)
 
 """ Configure a log """
 
@@ -55,9 +68,9 @@ logging.getLogger().addHandler(fh)
 #     graph_input = 'coords'
 # else: # i.e. HO3D
 
-trainloader = create_loader(args.dataset_name, args.root, 'train', batch_size=args.batch_size, num_kps3d=num_kps3d)
-valloader = create_loader(args.dataset_name, args.root, 'val', batch_size=args.batch_size)
-num_classes = 1 #hand only 
+trainloader = create_loader(args.dataset_name, os.path.join(args.root, args.dataset_name), 'train', batch_size=args.batch_size, num_kps3d=num_kps3d)
+valloader = create_loader(args.dataset_name, os.path.join(args.root, args.dataset_name), 'val', batch_size=args.batch_size)
+num_classes = 2 #hand -> 1
 graph_input = 'heatmaps'
 
 """ load model """
@@ -87,7 +100,7 @@ optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
 scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_step, gamma=args.lr_step_gamma)
 scheduler.last_epoch = start
 
-keys = ['boxes', 'labels', 'keypoints', 'keypoints3d', 'palm']
+keys = ['boxes', 'labels', 'keypoints', 'keypoints3d', 'mesh3d', 'palm']
 
 """ training """
 
@@ -134,6 +147,7 @@ for epoch in range(start, args.num_iterations):  # loop over the dataset multipl
         
         # Forward
         targets = [{k: v.to(device) for k, v in t.items() if k in keys} for t in data_dict]
+        #print(targets[0])
         inputs = [t['inputs'].to(device) for t in data_dict]
         loss_dict = model(inputs, targets)
         
@@ -157,6 +171,8 @@ for epoch in range(start, args.num_iterations):  # loop over the dataset multipl
         if (i+1) % args.log_batch == 0:    # print every log_iter mini-batches
             logging.info('[%d, %5d] loss 2d: %.4f, loss 3d: %.4f' % 
             (epoch + 1, i + 1, running_loss2d / args.log_batch, running_loss3d / args.log_batch))
+            wandb.log({'Loss 2D': running_loss2d, 'Loss 3D': running_loss3d})
+            
             running_loss2d = 0.0
             running_loss3d = 0.0
             # running_photometric_loss = 0.0
@@ -201,7 +217,8 @@ for epoch in range(start, args.num_iterations):  # loop over the dataset multipl
         
         # model.module.transform.training = True
         
-        logging.info('val loss 2d: %.4f, val loss 3d: %.4f' % (val_loss2d / (v+1), val_loss3d / (v+1)))        
+        logging.info('val loss 2d: %.4f, val loss 3d: %.4f' % (val_loss2d / (v+1), val_loss3d / (v+1)))   
+        wandb.log({'Val Loss 2D': val_loss2d, 'Val Loss 3D': val_loss3d})     
     
     if args.freeze and epoch == 0: #Apply pretrained Keypoint RCNN
         logging.info('Freezing Keypoint RCNN ..')            

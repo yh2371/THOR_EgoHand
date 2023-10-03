@@ -59,8 +59,8 @@ def calculate_keypoints(dataset_name, obj):
 
     else:
         num_verts = 2556 if obj else 1556
-        num_kps3d = 50 if obj else 42
-        num_kps2d = 21
+        num_kps3d = 29 if obj else 21
+        num_kps2d = 29 if obj else 21
 
     return num_kps2d, num_kps3d, num_verts
 

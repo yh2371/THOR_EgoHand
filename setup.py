@@ -22,7 +22,7 @@ def check_dependencies():
                 missing_dependencies))
 
 
-with open("README.md", "r") as fh:
+with open("README_THOR.md", "r") as fh:
     long_description = fh.read()
 
 # check_dependencies()
