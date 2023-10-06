@@ -37,28 +37,28 @@ def visualize2d(img, predictions, labels=None, filename=None, palm=None, evaluat
         plot_id += 1
         
         # Plot GT 2D keypoints
-        # plot_pose2d(img, labels, 0, palm, fig_config, plot_id, 'GT 2D pose')
-        # plot_id += 1
+        plot_pose2d(img, labels, 0, fig_config, plot_id, plot_txt = 'GT 2D pose', center=palm)
+        plot_id += 1
         
         # Plot GT 3D Keypoints
         plot_pose3d(labels, fig_config, plot_id, 'GT 3D pose', center=palm)
         plot_id += 1
 
-        # Plot GT 3D mesh
-        plot_mesh3d(labels, right_hand_faces, obj_faces, fig_config, plot_id, 'GT 3D mesh', center=palm, left_hand_faces=left_hand_faces)
-        plot_id += 1
+        # # Plot GT 3D mesh
+        # plot_mesh3d(labels, right_hand_faces, obj_faces, fig_config, plot_id, 'GT 3D mesh', center=palm, left_hand_faces=left_hand_faces)
+        # plot_id += 1
 
-        # Save textured mesh
-        texture = generate_gt_texture(img, labels['mesh3d'][0][:, :3])
-        save_mesh(labels, filename, right_hand_faces, obj_faces, texture=texture, shape_dir='mesh_gt', left_hand_faces=left_hand_faces)
+        # # Save textured mesh
+        # texture = generate_gt_texture(img, labels['mesh3d'][0][:, :3])
+        # save_mesh(labels, filename, right_hand_faces, obj_faces, texture=texture, shape_dir='mesh_gt', left_hand_faces=left_hand_faces)
 
     # Plot predicted bounding boxes
     plot_bb_ax(img, predictions, fig_config, plot_id, 'RGB frame and Bounding box')
     plot_id += 1
 
     # Plot predicted 2D keypoints
-    # plot_pose2d(img, predictions, idx, palm, fig_config, plot_id, 'Predicted 2D pose')
-    # plot_id += 1
+    plot_pose2d(img, predictions, 0, fig_config, plot_id, 'Predicted 2D pose', palm)
+    plot_id += 1
 
     # plot_pose_heatmap(img, predictions, idx, palm, fig_config, plot_id)
     # plot_id += 1
@@ -67,18 +67,18 @@ def visualize2d(img, predictions, labels=None, filename=None, palm=None, evaluat
     plot_pose3d(predictions, fig_config, plot_id, '3D pose', center=palm)
     plot_id += 1
 
-    # Plot predicted 3D Mesh
-    plot_mesh3d(predictions, right_hand_faces, obj_faces, fig_config, plot_id, '3D mesh', center=palm, left_hand_faces=left_hand_faces)
-    plot_id += 1
+    # # Plot predicted 3D Mesh
+    # plot_mesh3d(predictions, right_hand_faces, obj_faces, fig_config, plot_id, '3D mesh', center=palm, left_hand_faces=left_hand_faces)
+    # plot_id += 1
 
-    # Save textured mesh
-    predicted_texture = predictions['mesh3d'][0][:, 3:]
-    save_mesh(predictions, filename, right_hand_faces, obj_faces, texture=predicted_texture, left_hand_faces=left_hand_faces)
+    # # Save textured mesh
+    # predicted_texture = predictions['mesh3d'][0][:, 3:]
+    # save_mesh(predictions, filename, right_hand_faces, obj_faces, texture=predicted_texture, left_hand_faces=left_hand_faces)
     
     fig.tight_layout()
     plt.show()
-    # plt.savefig(filename)
-    # plt.clf()
+    plt.savefig(filename)
+    plt.clf()
     plt.close(fig)
 
 # Input parameters
@@ -133,15 +133,15 @@ if torch.cuda.is_available():
     model = nn.DataParallel(model, device_ids=args.gpu_number)
 
 ### Load model
-pretrained_model = f'./checkpoints/{args.checkpoint_folder}/model-{args.checkpoint_id}.pkl'
+pretrained_model = f'./checkpoints/model-{args.checkpoint_id}.pkl'
 model.load_state_dict(torch.load(pretrained_model, map_location='cuda:1'))
 model = model.eval()
 print(model)
 print('model loaded!')
 
-keys = ['boxes', 'labels', 'keypoints', 'keypoints3d', 'mesh3d']
-if args.dataset_name == 'ho3d':
-    keys.append('palm')
+keys = ['boxes', 'labels', 'keypoints', 'keypoints3d', 'mesh3d','palm']
+# if args.dataset_name == 'ho3d':
+#     keys.append('palm')
 c = 0
 # supporting_dicts = (pickle.load(open('./rcnn_outputs/rcnn_outputs_778_test_3d.pkl', 'rb')),
 #                     pickle.load(open('./rcnn_outputs_mesh/rcnn_outputs_778_test_3d.pkl', 'rb')))
@@ -158,6 +158,8 @@ if args.split == 'val' or (args.dataset_name == 'h2o' and args.split == 'test'):
 for i, ts_data in tqdm(enumerate(testloader)):
         
     data_dict = ts_data
+
+    #print(data_dict)
     path = data_dict[0]['path'].split('/')[-1]
     if args.seq not in data_dict[0]['path']:
         continue
@@ -184,7 +186,7 @@ for i, ts_data in tqdm(enumerate(testloader)):
 
     ### Evaluation
     if evaluate:
-        c = save_calculate_error(predictions, labels, path, errors, output_dicts, c, num_classes, args.dataset_name, obj=args.object, generate_mesh=True)
+        c = save_calculate_error(predictions, labels, path, errors, output_dicts, c, num_classes, args.dataset_name, obj=args.object, generate_mesh=False)
 
     if i == 10:
         break

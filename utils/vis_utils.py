@@ -386,6 +386,10 @@ def plot_pose2d(img, outputs, idx, fig_config, subplot_id, plot_txt, center=None
     keypoints3d = outputs['keypoints3d'][idx]
     
     if center is not None:
+        print(type(center))
+        print("YO!", center)
+        print(keypoints3d)
+        print(keypoints3d + center)
         keypoints = project_3D_points(cam_mat, keypoints3d + center, is_OpenGL_coords=True)
     else:
         keypoints = project_3D_points(cam_mat, keypoints3d, is_OpenGL_coords=False)
@@ -645,7 +649,7 @@ def read_annotation(base_dir, seq_name, file_id, split):
 def load_faces():
     
     # Load right hand faces
-    mano_layer = ManoLayer(mano_root='./mano_v1_2/models', use_pca=False, ncomps=6, flat_hand_mean=True)
+    mano_layer = ManoLayer(mano_root='./manopth/mano/models', use_pca=False, ncomps=6, flat_hand_mean=True)
     right_hand_faces = mano_layer.th_faces
 
     # Loading object faces
@@ -653,7 +657,7 @@ def load_faces():
     obj_faces = obj_mesh.f
 
     # Load left hand faces
-    mano_layer = ManoLayer(mano_root='./mano_v1_2/models', side='left', use_pca=False, ncomps=6, flat_hand_mean=True)
+    mano_layer = ManoLayer(mano_root='./manopth/mano/models', side='left', use_pca=False, ncomps=6, flat_hand_mean=True)
     left_hand_faces = mano_layer.th_faces
     
     return left_hand_faces, right_hand_faces, obj_faces

@@ -74,7 +74,6 @@ def mpjpe(predicted, target):
 
 def save_calculate_error(predictions, labels, path, errors, output_dicts, c, num_classes=2, dataset_name='h2o', obj=True, generate_mesh=False):
     """Stores the results of the model in a dict and calculates error in case of available gt"""
-
     predicted_labels = list(predictions['labels'])
 
     rhi, obji = 0, 21
@@ -160,7 +159,7 @@ def prepare_data_for_evaluation(data_dict, outputs, img, keys, device, split):
     """Postprocessing function"""
 
     # print(data_dict[0])
-    targets = [{}]#[{k: v.to(device) for k, v in t.items() if k in keys} for t in data_dict]
+    targets = [{k: v.to(device) for k, v in t.items() if k in keys} for t in data_dict]
 
     labels = {k: v.cpu().detach().numpy() for k, v in targets[0].items()}
     predictions = {k: v.cpu().detach().numpy() for k, v in outputs[0].items()}

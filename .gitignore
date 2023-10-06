@@ -16,3 +16,4 @@ manopth/
 checkpoints/
 datasets/
 wandb/
+environment.yml

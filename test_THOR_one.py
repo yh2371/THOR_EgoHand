@@ -135,13 +135,13 @@ if torch.cuda.is_available():
     model = nn.DataParallel(model, device_ids=args.gpu_number)
 
 ### Load model
-pretrained_model = f'./checkpoints/{args.checkpoint_folder}/model-{args.checkpoint_id}.pkl'
+pretrained_model = f'./checkpoints/model-{args.checkpoint_id}.pkl'
 model.load_state_dict(torch.load(pretrained_model, map_location='cuda:0'))
 model = model.eval()
 print(model)
 print('model loaded!')
 
-keys = ['boxes', 'labels', 'keypoints', 'keypoints3d', 'mesh3d']
+keys = ['boxes', 'labels', 'keypoints', 'keypoints3d', 'mesh3d', 'palm']
 if args.dataset_name == 'ho3d':
     keys.append('palm')
 c = 0
