@@ -86,7 +86,7 @@ dependencies:
       - appdirs==1.4.4
       - chardet==5.2.0
       - charset-normalizer==3.3.0
-      - chumpy==0.67.5
+      - git+https://github.com/hassony2/chumpy.git
       - click==8.1.7
       - cycler==0.11.0
       - docker-pycreds==0.4.0
@@ -95,7 +95,6 @@ dependencies:
       - imageio==2.31.2
       - importlib-metadata==6.7.0
       - kiwisolver==1.4.5
-      - manopth==0.0.1
       - matplotlib==3.3.4
       - networkx==2.6.3
       - numpy==1.21.6

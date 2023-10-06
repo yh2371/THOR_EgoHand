@@ -17,3 +17,4 @@ checkpoints/
 datasets/
 wandb/
 environment.yml
+outputs/
