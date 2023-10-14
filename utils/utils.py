@@ -4,7 +4,8 @@ import pickle
 import torchvision.transforms as transforms
 
 from .h2o_utils.h2o_datapipe_pt_1_12 import create_datapipe
-from .dataset import Dataset
+#from .dataset import Dataset
+from .ego4d_dataset import ego4dDataset
     
 
 def ho3d_collate_fn(batch):
@@ -33,15 +34,10 @@ def create_loader(dataset_name, root, split, batch_size, num_kps3d=21, num_verts
 
     transform = transforms.Compose([transforms.ToTensor()]) #to tensor transformation
 
-    if dataset_name.lower() == 'h2o':
-        input_tar_lists, annotation_tar_files, annotation_components, shuffle_buffer_size, my_preprocessor = h2o_info
-        datapipe = create_datapipe(input_tar_lists, annotation_tar_files, annotation_components, shuffle_buffer_size)
-        datapipe = datapipe.map(fn=my_preprocessor)
-        loader = torch.utils.data.DataLoader(datapipe, batch_size=batch_size, num_workers=8, shuffle=True)
-
-    else:
-        dataset = Dataset(root=root, load_set=split, transform=transform, num_kps3d=num_kps3d, num_verts=num_verts)
-        loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=2, collate_fn=ho3d_collate_fn)    
+    #dataset = Dataset(root=root, load_set=split, transform=transform, num_kps3d=num_kps3d, num_verts=num_verts)
+    dataset = ego4dDataset(root = root, anno_type='annotation', split = split, transform = transform)
+    loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=2, collate_fn=ho3d_collate_fn)    
+    
         
     return loader
 

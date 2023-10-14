@@ -58,24 +58,13 @@ logging.getLogger().addHandler(fh)
 
 """ load datasets """
 
-# if args.dataset_name.lower() == 'h2o':
-#     annotation_components = ['cam_pose', 'hand_pose', 'hand_pose_mano', 'obj_pose', 'obj_pose_rt', 'action_label', 'verb_label']
-#     my_preprocessor = MyPreprocessor('../mano_v1_2/models/', 'datasets/objects/mesh_1000/', args.root)
-#     h2o_data_dir = os.path.join(args.root, 'shards')
-#     train_input_tar_lists, train_annotation_tar_files = load_tar_split(h2o_data_dir, 'train')    
-#     val_input_tar_lists, val_annotation_tar_files = load_tar_split(h2o_data_dir, 'val')   
-#     num_classes = 4
-#     graph_input = 'coords'
-# else: # i.e. HO3D
-
-trainloader = create_loader(args.dataset_name, os.path.join(args.root, args.dataset_name), 'train', batch_size=args.batch_size, num_kps3d=num_kps3d)
-valloader = create_loader(args.dataset_name, os.path.join(args.root, args.dataset_name), 'val', batch_size=args.batch_size)
-num_classes = 2 #hand -> 1
+trainloader = create_loader(args.dataset_name, args.root, 'train', batch_size=args.batch_size, num_kps3d=num_kps3d)
+valloader = create_loader(args.dataset_name, args.root, 'val', batch_size=args.batch_size)
+num_classes = 2 #hand -> 1, backgroud->0
 graph_input = 'heatmaps'
 
 """ load model """
-model = create_thor(num_kps2d=num_kps2d, num_kps3d=num_kps3d, num_classes=num_classes, rpn_post_nms_top_n_train=num_classes-1, 
-                    device=device, num_features=args.num_features, hid_size=args.hid_size, photometric=args.photometric, graph_input=graph_input, dataset_name=args.dataset_name)
+model = create_thor(num_kps2d=num_kps2d, num_kps3d=num_kps3d, num_classes=num_classes, rpn_post_nms_top_n_train=num_classes-1, device=device, num_features=args.num_features, hid_size=args.hid_size, graph_input=graph_input, dataset_name=args.dataset_name)
 print('THOR is loaded')
 
 if torch.cuda.is_available():
@@ -100,7 +89,7 @@ optimizer = optim.Adam(model.parameters(), lr=args.learning_rate)
 scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=args.lr_step, gamma=args.lr_step_gamma)
 scheduler.last_epoch = start
 
-keys = ['boxes', 'labels', 'keypoints', 'keypoints3d', 'mesh3d', 'palm']
+keys = ['boxes', 'labels', 'keypoints', 'keypoints3d']
 
 """ training """
 
@@ -112,13 +101,6 @@ for epoch in range(start, args.num_iterations):  # loop over the dataset multipl
     running_loss2d = 0.0
     running_loss3d = 0.0
 
-    # running_mesh_loss3d = 0.0
-    # running_photometric_loss = 0.0
-    
-    # if 'h2o' in args.dataset_name.lower():
-    #     h2o_info = (train_input_tar_lists, train_annotation_tar_files, annotation_components, args.buffer_size, my_preprocessor)
-    #     trainloader = create_loader(args.dataset_name, h2o_data_dir, 'train', args.batch_size, h2o_info=h2o_info)
-
     for i, tr_data in enumerate(trainloader):
         
         # get the inputs
@@ -126,19 +108,16 @@ for epoch in range(start, args.num_iterations):  # loop over the dataset multipl
         '''
         format:
         data = {
-            'path': image_path,
-            'original_image': original_image,
+            'path': img_path,
+            'original_image': img,
             'inputs': inputs,
-            'point2d': point2d,
-            'point3d': point3d,
-            'mesh2d': mesh2d,
+            'point2d': curr_2d_kpts,
+            'point3d': curr_3d_kpts_cam_offset,
             'bb': bb,
             'boxes': boxes,
             'labels': labels,
             'keypoints': keypoints,
             'keypoints3d': keypoints3d,
-            'mesh3d': mesh3d,
-            'palm': torch.Tensor(palm[np.newaxis, ...]).float()
         }
         '''
 
@@ -163,20 +142,13 @@ for epoch in range(start, args.num_iterations):  # loop over the dataset multipl
         running_loss2d += loss_dict['loss_keypoint'].data
         running_loss3d += loss_dict['loss_keypoint3d'].data
 
-        # if 'loss_mesh3d' in loss_dict.keys():
-        #     running_mesh_loss3d += loss_dict['loss_mesh3d'].data
-        # if 'loss_photometric' in loss_dict.keys():
-        #     running_photometric_loss += loss_dict['loss_photometric'].data
-
         if (i+1) % args.log_batch == 0:    # print every log_iter mini-batches
             logging.info('[%d, %5d] loss 2d: %.4f, loss 3d: %.4f' % 
             (epoch + 1, i + 1, running_loss2d / args.log_batch, running_loss3d / args.log_batch))
-            wandb.log({'Loss 2D': running_loss2d, 'Loss 3D': running_loss3d})
+            wandb.log({'Loss 2D': running_loss2d/ args.log_batch, 'Loss 3D': running_loss3d/ args.log_batch})
             
             running_loss2d = 0.0
             running_loss3d = 0.0
-            # running_photometric_loss = 0.0
-            # running_mesh_loss3d = 0.0
 
     losses.append((train_loss2d / (i+1)).cpu().numpy())
     
@@ -187,15 +159,6 @@ for epoch in range(start, args.num_iterations):  # loop over the dataset multipl
     if (epoch+1) % args.val_epoch == 0:
         val_loss2d = 0.0
         val_loss3d = 0.0
-
-        # val_mesh_loss3d = 0.0
-        # val_photometric_loss = 0.0
-        
-        # model.module.transform.training = False
-        
-        # if 'h2o' in args.dataset_name.lower():
-        #     h2o_info = (val_input_tar_lists, val_annotation_tar_files, annotation_components, args.buffer_size, my_preprocessor)
-        #     valloader = create_loader(args.dataset_name, h2o_data_dir, 'val', args.batch_size, h2o_info)
 
         for v, val_data in enumerate(valloader):
             
@@ -210,15 +173,8 @@ for epoch in range(start, args.num_iterations):  # loop over the dataset multipl
             val_loss2d += loss_dict['loss_keypoint'].data
             val_loss3d += loss_dict['loss_keypoint3d'].data
             
-            # if 'loss_mesh3d' in loss_dict.keys():
-            #     val_mesh_loss3d += loss_dict['loss_mesh3d'].data
-            # if 'loss_photometric' in loss_dict.keys():
-            #     running_photometric_loss += loss_dict['loss_photometric'].data
-        
-        # model.module.transform.training = True
-        
         logging.info('val loss 2d: %.4f, val loss 3d: %.4f' % (val_loss2d / (v+1), val_loss3d / (v+1)))   
-        wandb.log({'Val Loss 2D': val_loss2d, 'Val Loss 3D': val_loss3d})     
+        wandb.log({'Val Loss 2D': val_loss2d/(v+1), 'Val Loss 3D': val_loss3d/(v+1)})     
     
     if args.freeze and epoch == 0: #Apply pretrained Keypoint RCNN
         logging.info('Freezing Keypoint RCNN ..')            

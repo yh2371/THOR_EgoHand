@@ -14,7 +14,7 @@ def calculate_bounding_box(point2d, increase=False):
         return np.array([x_min, y_min, x_max, y_max])
 
 
-def create_rcnn_data(bb, point2d, point3d, num_keypoints=21):
+def create_rcnn_data(bb, point2d, point3d, num_keypoints=21, vis_flag = None):
     ''' Prepares data for an RCNN by creating tensors for Bounding boxes, labels and keypoints with their visibility'''
             
     # Boxes and Labels
@@ -23,6 +23,8 @@ def create_rcnn_data(bb, point2d, point3d, num_keypoints=21):
     
     # Appending visibility TODO: change this to actual visibility
     visibility = np.ones(num_keypoints).reshape(-1, 1)
+    if not vis_flag is None:
+        visibility[~vis_flag] = 0
     keypoints = np.append(point2d[:num_keypoints], visibility, axis=1)
 
     # Append keypoints

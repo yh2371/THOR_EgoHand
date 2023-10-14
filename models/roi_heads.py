@@ -159,6 +159,7 @@ class RoIHeads(nn.Module):
 
         # append ground-truth bboxes to propos
         proposals = self.add_gt_proposals(proposals, gt_boxes)
+        
 
         # get matching gt indices for each proposal
         matched_idxs, labels = self.assign_targets_to_proposals(proposals, gt_boxes, gt_labels)
@@ -178,6 +179,7 @@ class RoIHeads(nn.Module):
             matched_gt_boxes.append(gt_boxes_in_image[matched_idxs[img_id]])
 
         regression_targets = self.box_coder.encode(matched_gt_boxes, proposals)
+        
         return proposals, matched_idxs, labels, regression_targets
 
     def postprocess_detections(self,
@@ -315,8 +317,9 @@ class RoIHeads(nn.Module):
                     pos_matched_idxs.append(matched_idxs[img_id][pos])
             else:
                 pos_matched_idxs = None
-            
+
             keypoint_features = self.keypoint_roi_pool(features, keypoint_proposals, image_shapes)
+ 
             graformer_features = keypoint_features
             keypoint_features = self.keypoint_head(keypoint_features)
             keypoint_logits = self.keypoint_predictor(keypoint_features)
@@ -331,12 +334,11 @@ class RoIHeads(nn.Module):
                 filtered_keypoint_proposals = None
 
             keypoint3d = torch.zeros((len(proposals), self.num_kps3d, 3))
-            mesh3d = torch.zeros((len(proposals), self.num_verts, 3))
 
             # There are two modes to use RCNN's outputs to reconstruct hands and object 
             # If the hand and object in the same box i.e. num_classes=2, or if the hands and the objects are in separate boxes i.e. num_classes = 3 or 4
 
-            if self.num_verts > 0 and ((self.num_classes > 2 and filtered_keypoint_proposals is not None) or batch > 0):
+            if ((self.num_classes > 2 and filtered_keypoint_proposals is not None) or batch > 0):
                 
                 if self.num_classes > 2: 
                     graformer_features = self.keypoint_roi_pool(features, filtered_keypoint_proposals, image_shapes)
@@ -357,20 +359,6 @@ class RoIHeads(nn.Module):
                 
                 # Estimate 3D pose
                 keypoint3d = self.keypoint_graformer(graformer_inputs)
-                
-                # Extract features from RoIs
-                #graformer_features = self.feature_extractor(graformer_features)
-                
-                # Every image has 3 RoIs 
-                # if self.num_classes > 2:
-                #     graformer_features = graformer_features.view(num_images, num_classes, -1).unsqueeze(axis=2).repeat(1, 1, self.num_kps2d, 1)
-                #     graformer_features = graformer_features.view(num_images, num_classes * kps, 2048)[:, :self.num_kps3d]
-                # else:
-                #     graformer_features = graformer_features.unsqueeze(axis=1).repeat(1, self.num_kps2d, 1)
-                
-                # Pass features and pose to Coarse-to-fine GraFormer
-                #mesh_graformer_inputs = torch.cat((graformer_inputs, graformer_features), axis=2)
-                #mesh3d = self.mesh_graformer(mesh_graformer_inputs)
             
             loss_keypoint = {}
             
@@ -380,7 +368,7 @@ class RoIHeads(nn.Module):
 
                 gt_keypoints = [t["keypoints"] for t in targets]
                 keypoints3d_gt = [t["keypoints3d"] for t in targets]
-                mesh3d_gt = [t["mesh3d"] for t in targets]
+               
 
                 # Shift back using palms
                 if "palm" in targets[0].keys():
@@ -388,22 +376,14 @@ class RoIHeads(nn.Module):
                 else:
                     palms_gt = None
 
-                rcnn_loss_keypoint, rcnn_loss_keypoint3d, rcnn_loss_mesh3d, rcnn_loss_photometric = keypointrcnn_loss(
-                                                                            keypoint_logits, keypoint_proposals, gt_keypoints, 
-                                                                            pos_matched_idxs, keypoint3d, keypoints3d_gt, 
-                                                                            mesh3d, mesh3d_gt, original_images=original_imgs, 
-                                                                            palms_gt=palms_gt, num_classes=self.num_classes,
-                                                                            photometric=self.photometric, dataset_name=self.dataset_name)
+                rcnn_loss_keypoint, rcnn_loss_keypoint3d = keypointrcnn_loss(keypoint_logits, keypoint_proposals, gt_keypoints, 
+                                                                            pos_matched_idxs, keypoint3d, keypoints3d_gt, original_images=original_imgs, 
+                                                                            palms_gt=palms_gt, num_classes=self.num_classes, dataset_name=self.dataset_name)
 
                 loss_keypoint = {
                     "loss_keypoint": rcnn_loss_keypoint,
                     "loss_keypoint3d": rcnn_loss_keypoint3d,
                 }
-                
-                if self.num_verts > 0 and rcnn_loss_mesh3d is not None:
-                    loss_keypoint['loss_mesh3d'] = rcnn_loss_mesh3d
-                if rcnn_loss_photometric is not None:
-                    loss_keypoint['loss_photometric'] = rcnn_loss_photometric
 
             else:
                 assert keypoint_logits is not None
@@ -414,7 +394,6 @@ class RoIHeads(nn.Module):
                     r["keypoints"] = keypoint_prob
                     r["keypoints_scores"] = kps
                     r["keypoints3d"] = keypoint3d
-                    r["mesh3d"] = mesh3d        
 
             losses.update(loss_keypoint)
 

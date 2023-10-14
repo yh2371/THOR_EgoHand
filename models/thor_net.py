@@ -209,17 +209,6 @@ class THOR(FasterRCNN):
         keypoint_graformer = GraFormer(adj=adj.to(device), hid_dim=hid_size, coords_dim=(input_size, 3), 
                                         n_pts=num_kps3d, num_layers=5, n_head=4, dropout=0.25)
         
-        # # Coarse-to-fine GraFormer (mesh removed)
-        # mesh_graformer = None
-        # if num_verts > 0:
-        #     feature_extractor = TwoMLPHead(256 * 14 * 14, num_features)
-        #     input_size += num_features
-        #     output_size = 3
-        #     if photometric:
-        #         output_size += 3
-        #     mesh_graformer = MeshGraFormer(initial_adj=adj.to(device), hid_dim=num_features // 4, coords_dim=(input_size, output_size), 
-        #                     num_kps3d=num_kps3d, num_verts=num_verts, dropout=0.25)
-
         super(THOR, self).__init__(
             backbone, num_classes,
             # transform parameters
@@ -245,19 +234,14 @@ class THOR(FasterRCNN):
         self.roi_heads.keypoint_predictor = keypoint_predictor
 
         self.roi_heads.keypoint_graformer = keypoint_graformer
-        #self.roi_heads.feature_extractor = feature_extractor
-        #self.roi_heads.mesh_graformer = mesh_graformer
         
         # GraFormer Params
         self.roi_heads.num_kps2d = num_kps2d
         self.roi_heads.num_kps3d = num_kps3d
-        self.roi_heads.num_verts = num_verts
         self.roi_heads.graph_input = graph_input
         self.roi_heads.num_classes = num_classes
         self.roi_heads.num_features = num_features
-        self.roi_heads.photometric = photometric
         self.roi_heads.dataset_name = dataset_name
-        
 
 class KeypointRCNNHeads(nn.Sequential):
     def __init__(self, in_channels, layers):
