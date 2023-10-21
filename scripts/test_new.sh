@@ -1,10 +1,10 @@
 python test_THOR.py \
- --dataset_name FreiHand \
- --root ./datasets/FreiHand/ \
- --checkpoint_folder h2o\
- --checkpoint_id 10 \
+ --dataset_name ego4d \
+ --root ../ \
+ --checkpoint_folder manual\
+ --checkpoint_id 14 \
  --split val \
- --seq rgb \
+ --seq rgb_manual_2\
  --gpu_number 0 \
  --batch_size 1 \
  --visualize \

@@ -30,12 +30,12 @@ def h2o_collate_fn(samples):
         output_list.append(sample_dict)
     return output_list
 
-def create_loader(dataset_name, root, split, batch_size, num_kps3d=21, num_verts=778, h2o_info=None):
+def create_loader(dataset_name, root, split, batch_size, num_kps3d=21, num_verts=778, h2o_info=None, anno_type ='annotation' ):
 
     transform = transforms.Compose([transforms.ToTensor()]) #to tensor transformation
 
     #dataset = Dataset(root=root, load_set=split, transform=transform, num_kps3d=num_kps3d, num_verts=num_verts)
-    dataset = ego4dDataset(root = root, anno_type='annotation', split = split, transform = transform)
+    dataset = ego4dDataset(root = root, anno_type=anno_type, split = split, transform = transform)
     loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=2, collate_fn=ho3d_collate_fn)    
     
         
@@ -44,6 +44,7 @@ def create_loader(dataset_name, root, split, batch_size, num_kps3d=21, num_verts
 def freeze_component(model):
     model = model.eval()
     for param in model.parameters():
+        print(param)
         param.requires_grad = False
     
 def calculate_keypoints(dataset_name, obj):
@@ -151,14 +152,23 @@ def save_dicts(output_dicts, split):
     with open(f'./outputs/rcnn_outputs/rcnn_outputs_778_{split}_3d_v3.pkl', 'wb') as f:
         pickle.dump(output_dict_mesh, f)
 
-def prepare_data_for_evaluation(data_dict, outputs, img, keys, device, split):
+def prepare_data_for_evaluation(data_dict, outputs, img, keys, device, split, mean = None, std = None):
     """Postprocessing function"""
 
     # print(data_dict[0])
     targets = [{k: v.to(device) for k, v in t.items() if k in keys} for t in data_dict]
-
     labels = {k: v.cpu().detach().numpy() for k, v in targets[0].items()}
     predictions = {k: v.cpu().detach().numpy() for k, v in outputs[0].items()}
+    predictions['intrinsic'] = data_dict[0]['intrinsic']
+    labels['intrinsic'] = data_dict[0]['intrinsic']
+
+    predictions['keypoints3d'] =  predictions['keypoints3d'] #* (std).detach().cpu().numpy() + mean.detach().cpu().numpy()
+    targets[0]['keypoints3d'] =  targets[0]['keypoints3d'] #* (std)+ mean
+    predictions['trans'] = data_dict[0]['trans']
+    labels['trans'] = data_dict[0]['trans']
+
+    predictions['wrist'] = data_dict[0]['wrist']
+    labels['wrist'] = data_dict[0]['wrist']
 
     palm = None
     if 'palm' in labels.keys():

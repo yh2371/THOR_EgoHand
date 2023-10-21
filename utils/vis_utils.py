@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import cv2
 import pymeshlab
 from manopth.manolayer import ManoLayer
+import torch
 
 
 """ General util functions. """
@@ -34,7 +35,6 @@ def showHandJoints(imgInOrg, gtIn, filename=None, dataset_name='ho', mode='pred'
     :return:
     '''
     import cv2
-
     imgIn = np.copy(imgInOrg)
     # Set color for each finger
 
@@ -85,17 +85,20 @@ def showHandJoints(imgInOrg, gtIn, filename=None, dataset_name='ho', mode='pred'
     else:
         max_length=500
         for joint_num in range(gtIn.shape[0]):
-
+            if np.isnan(gtIn[joint_num][0]) or np.isnan(gtIn[joint_num][1]) or gtIn[joint_num][1] <0 or gtIn[joint_num][0]<0:
+                continue
             color_code_num = (joint_num // 4)
             joint_color = list(map(lambda x: x + cf * (joint_num % 4), joint_color_code[color_code_num]))[::-1]    
-            
-            cv2.circle(imgIn, center=(gtIn[joint_num][0], gtIn[joint_num][1]), radius=3, color=joint_color, thickness=-1)
+            #print(gtIn)
+            cv2.circle(imgIn, center=(int(gtIn[joint_num][0]), int(gtIn[joint_num][1])), radius=3, color=joint_color, thickness=-1)
         
         for limb_num in range(len(limbs)):
             x1 = gtIn[limbs[limb_num][0], 1]
             y1 = gtIn[limbs[limb_num][0], 0]
             x2 = gtIn[limbs[limb_num][1], 1]
             y2 = gtIn[limbs[limb_num][1], 0]
+            if np.isnan(x1) or np.isnan(y1) or np.isnan(x2) or np.isnan(y2) or x1 < 0 or y1 <0 or x2 < 0 or y2 < 0:
+                continue
             length = ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
             if length < max_length and length > 5:
                 deg = math.degrees(math.atan2(x1 - x2, y1 - y2))
@@ -369,7 +372,27 @@ def plot_bb_ax(img, outputs, fig_config, subplot_id, plot_txt):
     ax.title.set_text(plot_txt)
     ax.imshow(bb_image)
 
-def plot_pose2d(img, outputs, idx, fig_config, subplot_id, plot_txt, center=None, dataset_name='h2o'):
+def affine_transform(kpts, trans):
+    """
+    Affine transformation of 2d kpts
+    Input:
+        kpts: (N,2)
+        trans: (3,3)
+    Output:
+        new_kpts: (N,2)
+    """
+    if trans.shape[0] == 2:
+        trans = np.concatenate((trans, [[0,0,1]]), axis=0)
+    new_kpts = kpts.copy()
+    none_idx = np.any(new_kpts==None, axis=1)
+    new_kpts[none_idx] = 0
+    new_kpts = np.append(new_kpts, np.ones((new_kpts.shape[0], 1)), axis=1)
+    new_kpts = (trans @ new_kpts.T).T
+    new_kpts[none_idx] = None
+    return new_kpts
+
+
+def plot_pose2d(img, outputs, idx, fig_config, subplot_id, plot_txt, center=None, dataset_name='h2o', pose2d=False):
 
     if dataset_name == 'h2o':
         cam_mat = np.array([[636.6593,   0.0000, 635.2839],
@@ -382,22 +405,27 @@ def plot_pose2d(img, outputs, idx, fig_config, subplot_id, plot_txt, center=None
             [0,       617.343,241.42],
             [0,       0,       1]
         ])
+    cam_mat = outputs['intrinsic']
+    trans = outputs['trans']
+    wrist = outputs['wrist'].view((1,3)).numpy()
 
     keypoints3d = outputs['keypoints3d'][idx]
+    #print(keypoints3d.shape)
+    #print(wrist.shape)
+
     
     if center is not None:
-        print(type(center))
-        print("YO!", center)
-        print(keypoints3d)
-        print(keypoints3d + center)
         keypoints = project_3D_points(cam_mat, keypoints3d + center, is_OpenGL_coords=True)
     else:
-        keypoints = project_3D_points(cam_mat, keypoints3d, is_OpenGL_coords=False)
+        keypoints = project_3D_points(cam_mat, (keypoints3d+wrist)/1000, is_OpenGL_coords=False)
 
+    keypoints = affine_transform(keypoints, trans)
+    if pose2d:
+        keypoints = outputs['keypoints'][idx]
     fig, H, W = fig_config
     plt_image = np.copy(img)
 
-    keypoints = outputs['keypoints'][idx]
+    #keypoints = outputs['keypoints'][idx]
     ax = fig.add_subplot(H, W, subplot_id)
     plt_image = showHandJoints(plt_image, keypoints[:21,:2])
     
@@ -603,10 +631,24 @@ def project_3D_points(cam_mat, pts3D, is_OpenGL_coords=True):
 
     proj_pts = pts3D.dot(cam_mat.T)
     proj_pts = np.stack([proj_pts[:,0]/proj_pts[:,2], proj_pts[:,1]/proj_pts[:,2]],axis=1)
+    proj_pts = aria_original_to_extracted(proj_pts,np.array([512,512]))
 
     assert len(proj_pts.shape) == 2
 
     return proj_pts
+
+def aria_original_to_extracted(kpts, img_shape=(1408, 1408)):
+    """
+    Rotate kpts coordinates from original view (hand horizontal) to extracted view (hand vertical)
+    img_shape is the shape of original view image
+    """
+    # assert len(kpts.shape) == 2, "Only can rotate 2D arrays"
+    H, _ = img_shape
+    none_idx = np.any(kpts == None, axis=1)
+    new_kpts = kpts.copy()
+    new_kpts[~none_idx, 0] = H - kpts[~none_idx, 1] - 1
+    new_kpts[~none_idx, 1] = kpts[~none_idx, 0]
+    return new_kpts
 
 def read_RGB_img(base_dir, seq_name, file_id, split):
     """Read the RGB image in dataset"""

@@ -45,8 +45,48 @@ class ego4dDataset(Dataset):
         self.db = self.load_raw_data()
         
         self.transform = transform
-        self.joint_mean = []
-        self.joint_std = []
+        self.joint_mean = np.array([[ 0.0000000e+00,  0.0000000e+00,  0.0000000e+00],
+                                    [-3.9501650e+00, -8.6685377e-01,  2.4517984e+01],
+                                    [-1.3187613e+01,  1.2967486e+00,  4.7673504e+01],
+                                    [-2.2936522e+01,  1.5275195e+00,  7.2566208e+01],
+                                    [-3.1109295e+01,  1.9404153e+00,  9.5952751e+01],
+                                    [-4.8375599e+01,  4.6012049e+00,  6.7085617e+01],
+                                    [-5.9843365e+01,  5.9568534e+00,  9.3948418e+01],
+                                    [-5.7148232e+01,  5.7935758e+00,  1.1097713e+02],
+                                    [-5.1052166e+01,  4.9937048e+00,  1.2502338e+02],
+                                    [-5.1586624e+01,  2.5471370e+00,  7.2120811e+01],
+                                    [-6.5926834e+01,  3.0671554e+00,  9.8404510e+01],
+                                    [-6.1979191e+01,  2.8341565e+00,  1.1610429e+02],
+                                    [-5.4618130e+01,  2.5274558e+00,  1.2917862e+02],
+                                    [-4.6503471e+01,  3.3559692e-01,  7.3062035e+01],
+                                    [-5.9186893e+01,  2.6649246e-02,  9.6192421e+01],
+                                    [-5.6693432e+01, -8.4625520e-02,  1.1205978e+02],
+                                    [-5.1260197e+01,  3.4378145e-02,  1.2381713e+02],
+                                    [-3.5775276e+01, -1.0368422e+00,  7.0583588e+01],
+                                    [-4.3695080e+01, -1.9620019e+00,  8.8694397e+01],
+                                    [-4.4897186e+01, -2.6101866e+00,  1.0119468e+02],
+                                    [-4.4571526e+01, -3.3564034e+00,  1.1180748e+02]])
+        self.joint_std = np.array([[ 0.      ,  0.      ,  0.      ],
+                                    [17.266953, 44.075836, 14.078445],
+                                    [24.261362, 65.793236, 18.580193],
+                                    [25.479671, 74.18796 , 19.767653],
+                                    [30.458921, 80.729996, 23.553158],
+                                    [21.826715, 45.61571 , 18.80888 ],
+                                    [26.570208, 54.434124, 19.955523],
+                                    [30.757236, 60.084938, 23.375763],
+                                    [35.174015, 64.042404, 31.206692],
+                                    [21.586899, 28.31489 , 16.090088],
+                                    [29.26384 , 35.83172 , 18.48644 ],
+                                    [35.396465, 40.93173 , 26.987226],
+                                    [40.40074 , 45.358475, 37.419308],
+                                    [20.73408 , 21.591717, 14.190551],
+                                    [28.290194, 27.946808, 18.350618],
+                                    [34.42277 , 31.388414, 28.024563],
+                                    [39.819054, 35.205494, 38.80897 ],
+                                    [19.79841 , 29.38799 , 14.820373],
+                                    [26.476702, 34.7448  , 20.027615],
+                                    [31.811651, 37.06962 , 27.742807],
+                                    [36.893555, 38.98199 , 36.001797]])
 
 
     def __getitem__(self, idx):
@@ -71,6 +111,7 @@ class ego4dDataset(Dataset):
         # Apply transformation to input images
         if self.transform:
             inputs = self.transform(inputs)
+
         # Affine transformation to 2D hand kpts
         curr_2d_kpts = curr_db['joints_2d']
         curr_2d_kpts = affine_transform(curr_2d_kpts, trans)
@@ -91,14 +132,9 @@ class ego4dDataset(Dataset):
         # Make sure hand wrist stay unchanged
         curr_3d_kpts_cam = curr_3d_kpts_cam * 1000 # m to mm
         curr_3d_kpts_cam_offset = curr_3d_kpts_cam - curr_3d_kpts_cam[0]
+        wrist = curr_3d_kpts_cam[0]
         # Normalization
-        try:
-            self.joint_mean = np.mean(curr_3d_kpts_cam_offset, axis = 0)
-            self.joint_std = np.std(curr_3d_kpts_cam_offset, axis = 0)
-            curr_3d_kpts_cam_offset = (curr_3d_kpts_cam_offset - self.joint_mean) / self.joint_std
-        except:
-            print(curr_3d_kpts_cam_offset)
-            print(np.sum(curr_3d_kpts_cam_offset, axis = 0))
+        #curr_3d_kpts_cam_offset = (curr_3d_kpts_cam_offset - self.joint_mean) / (self.joint_std + 1e-8)
         curr_3d_kpts_cam_offset[~curr_db['valid_flag']] = None
         curr_3d_kpts_cam_offset = torch.from_numpy(curr_3d_kpts_cam_offset.astype(np.float32))
 
@@ -129,6 +165,10 @@ class ego4dDataset(Dataset):
             'labels': labels,
             'keypoints': keypoints,
             'keypoints3d': keypoints3d,
+            'intrinsic': torch.from_numpy(curr_db['intrinsic']),
+            'valid': curr_db['valid_flag'],
+            'trans': torch.from_numpy(trans),
+            'wrist': torch.from_numpy(wrist)
         }
         return data
 
@@ -140,30 +180,30 @@ class ego4dDataset(Dataset):
     def load_raw_data(self):
         gt_db = []
 
-        # # Based on split uids, found local take uids that has annotation
-        # curr_split_uid = self.split_take_dict[self.split]
-        # available_curr_split_uid = [t for t in self.all_take_uid if t in curr_split_uid]
-        # print(f"Number of {self.split} takes: {len(curr_split_uid)}\t Found local {len(available_curr_split_uid)} takes")
+        # Based on split uids, found local take uids that has annotation
+        curr_split_uid = self.split_take_dict[self.split]
+        available_curr_split_uid = [t for t in self.all_take_uid if t in curr_split_uid]
+        print(f"Number of {self.split} takes for {self.anno_type} data: {len(curr_split_uid)}\t Found local {len(available_curr_split_uid)} takes")
 
-        if self.split == 'train':
-            available_curr_split_uid = [
-                "e3cb859e-73ca-4cef-8c08-296bafdb43cd",
-                "d2218738-2af2-4585-bd1c-af8ad10d7827",
-                "3940a14c-f0ae-4636-8f03-52daa071f084",
-                "989b038e-d46c-4433-b968-87b58a4c7037",
-                "354f076e-079f-440d-bd38-97ddfcd19002",
-                "7014a547-6f84-48cb-bc91-28012c4cce06",
-                "f0ebc587-3687-494d-a707-2a5d52b64719",
-                "c507b073-7bf9-40db-8537-de599b6f6565",
-                "794b3bd3-eac9-4d0d-9789-bd068bff3944",
-                "c53a1199-5ca1-4aa8-ac4e-38227ff44689",
-            ]
-        elif self.split == 'val':
-            available_curr_split_uid = [
-                "6e5211e1-72d8-4032-ba56-b4095c0f2b36",
-                "a8d04142-fc0b-4ad4-acaa-8c17424411ff",
-                "e5beffc8-2cc5-4cc5-9e0e-b22b843aaa4c",
-            ]
+        # if self.split == 'train':
+        #     available_curr_split_uid = [
+        #         "e3cb859e-73ca-4cef-8c08-296bafdb43cd",
+        #         "d2218738-2af2-4585-bd1c-af8ad10d7827",
+        #         "3940a14c-f0ae-4636-8f03-52daa071f084",
+        #         "989b038e-d46c-4433-b968-87b58a4c7037",
+        #         "354f076e-079f-440d-bd38-97ddfcd19002",
+        #         "7014a547-6f84-48cb-bc91-28012c4cce06",
+        #         "f0ebc587-3687-494d-a707-2a5d52b64719",
+        #         "c507b073-7bf9-40db-8537-de599b6f6565",
+        #         "794b3bd3-eac9-4d0d-9789-bd068bff3944",
+        #         "c53a1199-5ca1-4aa8-ac4e-38227ff44689",
+        #     ]
+        # if self.split == 'val':
+        #     available_curr_split_uid = [
+        #         "6e5211e1-72d8-4032-ba56-b4095c0f2b36",
+        #         "a8d04142-fc0b-4ad4-acaa-8c17424411ff",
+        #         "e5beffc8-2cc5-4cc5-9e0e-b22b843aaa4c",
+        #     ]
 
         # Iterate through all takes from annotation directory and check
         for curr_take_uid in available_curr_split_uid:
@@ -243,6 +283,7 @@ class ego4dDataset(Dataset):
                         'frame_idx': frame_idx,
                         'hand_name': hand_name,
                         'bbox': one_hand_bbox,
+
                     })
         return curr_take_db
 
@@ -262,7 +303,7 @@ class ego4dDataset(Dataset):
     def load_aria_calib(self, curr_take_name):
         # Load aria calibration model
         capture_name = '_'.join(curr_take_name.split('_')[:-1])
-        vrs_path = os.path.join(self.dataset_root, 'captures', capture_name, 'videos/aria01.vrs')
+        vrs_path = glob.glob(os.path.join(self.dataset_root, 'captures', capture_name, 'videos/*.vrs'))[0]
         aria_rgb_calib = get_aria_camera_models(vrs_path)['214-1']
         dst_cam_calib = calibration.get_linear_camera_calibration(512, 512, 150)
         # Generate mask in undistorted aria view
@@ -315,11 +356,18 @@ class ego4dDataset(Dataset):
 
     def load_frame_cam_pose(self, frame_idx, cam_pose):
         # Check if current frame has corresponding camera pose
-        if frame_idx not in cam_pose.keys() or 'aria01' not in cam_pose[frame_idx].keys():
+        if frame_idx not in cam_pose.keys():
+            return None, None
+        tgt_key = None
+        for key in cam_pose[frame_idx].keys():
+            if 'aria' in key:
+                tgt_key = key
+                break
+        if tgt_key is None:
             return None, None
         # Build camera projection matrix
-        curr_cam_intrinsic = np.array(cam_pose[frame_idx]['aria01']['camera_intrinsics'])
-        curr_cam_extrinsics = np.array(cam_pose[frame_idx]['aria01']['camera_extrinsics'])
+        curr_cam_intrinsic = np.array(cam_pose[frame_idx][tgt_key]['camera_intrinsics'])
+        curr_cam_extrinsics = np.array(cam_pose[frame_idx][tgt_key]['camera_extrinsics'])
         return curr_cam_intrinsic, curr_cam_extrinsics
 
 

@@ -7,6 +7,60 @@ from torchvision.models.detection import _utils as det_utils
 
 from typing import Optional, List, Dict, Tuple
 from .rcnn_loss import *
+import numpy as np
+
+def affine_transform(kpts, trans):
+    """
+    Affine transformation of 2d kpts
+    Input:
+        kpts: (N,2)
+        trans: (3,3)
+    Output:
+        new_kpts: (N,2)
+    """
+    if trans.shape[0] == 2:
+        trans = torch.cat((trans, torch.tensor([[0, 0, 1]], dtype=torch.float32).cuda(1)), dim=0)
+    none_idx = torch.any(torch.isnan(kpts), dim=-1).cuda(1)
+    kpts[none_idx] = 0
+    kpts = torch.cat((kpts, torch.ones((kpts.shape[0],1)).cuda(1)), dim=1) 
+    kpts = (trans @ kpts.T).T
+    kpts[none_idx] = torch.nan
+    return kpts[:,:2]
+
+def aria_original_to_extracted(kpts, img_shape=(1408, 1408)):
+    """
+    Rotate kpts coordinates from original view (hand horizontal) to extracted view (hand vertical)
+    img_shape is the shape of original view image
+    """
+    # assert len(kpts.shape) == 2, "Only can rotate 2D arrays"
+    H, _ = img_shape
+    #print((kpts == None).shape)
+    #none_idx = torch.from_numpy(np.any(kpts == None, axis=1)).cuda()
+    none_idx = torch.any(torch.isnan(kpts), dim=-1).cuda(1)
+    kpts[~none_idx, 0], kpts[~none_idx, 1] = H - kpts[~none_idx, 1] - 1, kpts[~none_idx, 0]
+    return kpts
+
+def project_3D_points(cam_mat, pts3D, is_OpenGL_coords=True):
+    '''
+    Function for projecting 3d points to 2d
+    :param camMat: camera matrix
+    :param pts3D: 3D points
+    :param isOpenGLCoords: If True, hand/object along negative z-axis. If False hand/object along positive z-axis
+    :return:
+    '''
+    assert pts3D.shape[-1] == 3
+    assert len(pts3D.shape) == 2
+    # print(pts3D.shape, cam_mat.shape)
+
+    proj_pts = pts3D @ cam_mat.T
+    proj_pts = proj_pts[:,0:2]/proj_pts[:,2:]#torch.cat((proj_pts[:,0:1]/proj_pts[:,2:], proj_pts[:,1:2]/proj_pts[:,2:]),dim=1)
+
+    #print(proj_pts.shape)
+    proj_pts = aria_original_to_extracted(proj_pts,np.array([512,512]))
+
+    assert len(proj_pts.shape) == 2
+
+    return proj_pts
 
 class RoIHeads(nn.Module):
     __annotations__ = {
@@ -319,9 +373,10 @@ class RoIHeads(nn.Module):
                 pos_matched_idxs = None
 
             keypoint_features = self.keypoint_roi_pool(features, keypoint_proposals, image_shapes)
- 
+
             graformer_features = keypoint_features
             keypoint_features = self.keypoint_head(keypoint_features)
+
             keypoint_logits = self.keypoint_predictor(keypoint_features)
 
             # Apply the same operation but only the last RoIs which are the GT RoIs to train the GraFormers
@@ -368,7 +423,9 @@ class RoIHeads(nn.Module):
 
                 gt_keypoints = [t["keypoints"] for t in targets]
                 keypoints3d_gt = [t["keypoints3d"] for t in targets]
-               
+                wrist = [t['wrist'] for t in targets]
+                cam_mat = [t['intrinsic'] for t in targets]
+                trans = [t['trans'] for t in targets]
 
                 # Shift back using palms
                 if "palm" in targets[0].keys():
@@ -376,13 +433,15 @@ class RoIHeads(nn.Module):
                 else:
                     palms_gt = None
 
-                rcnn_loss_keypoint, rcnn_loss_keypoint3d = keypointrcnn_loss(keypoint_logits, keypoint_proposals, gt_keypoints, 
+                rcnn_loss_keypoint, rcnn_loss_keypoint3d, rcnn_loss_proj = keypointrcnn_loss(keypoint_logits, keypoint_proposals, gt_keypoints, 
                                                                             pos_matched_idxs, keypoint3d, keypoints3d_gt, original_images=original_imgs, 
-                                                                            palms_gt=palms_gt, num_classes=self.num_classes, dataset_name=self.dataset_name)
+                                                                            palms_gt=palms_gt, num_classes=self.num_classes, dataset_name=self.dataset_name, wrist = wrist, cam_mat = cam_mat, trans = trans)
 
+    
                 loss_keypoint = {
                     "loss_keypoint": rcnn_loss_keypoint,
                     "loss_keypoint3d": rcnn_loss_keypoint3d,
+                    "loss_proj": rcnn_loss_proj
                 }
 
             else:

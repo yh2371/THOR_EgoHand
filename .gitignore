@@ -8,6 +8,7 @@ build/
 dist/
 manopth_hassony2.egg-info/
 checkpoints/
+checkpoints2/
 mano_v1_2/
 mano/
 mano/models
@@ -18,3 +19,4 @@ datasets/
 wandb/
 environment.yml
 outputs/
+visual_results/
