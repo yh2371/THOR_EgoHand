@@ -6,58 +6,6 @@ from typing import Optional, List, Dict, Tuple
 from torch import nn, Tensor
 import cv2
 import numpy as np
-def affine_transform(kpts, trans):
-    """
-    Affine transformation of 2d kpts
-    Input:
-        kpts: (N,2)
-        trans: (3,3)
-    Output:
-        new_kpts: (N,2)
-    """
-    if trans.shape[0] == 2:
-        trans = torch.cat((trans, torch.tensor([[0, 0, 1]], dtype=torch.float32).cuda(1)), dim=0)
-    none_idx = torch.any(torch.isnan(kpts), dim=-1).cuda(1)
-    kpts[none_idx] = 0
-    kpts = torch.cat((kpts, torch.ones((kpts.shape[0],1)).cuda(1)), dim=1) 
-    kpts = (trans @ kpts.T).T
-    kpts[none_idx] = torch.nan
-    return kpts
-
-def aria_original_to_extracted(kpts, img_shape=(1408, 1408)):
-    """
-    Rotate kpts coordinates from original view (hand horizontal) to extracted view (hand vertical)
-    img_shape is the shape of original view image
-    """
-    # assert len(kpts.shape) == 2, "Only can rotate 2D arrays"
-    H, _ = img_shape
-    #print((kpts == None).shape)
-    #none_idx = torch.from_numpy(np.any(kpts == None, axis=1)).cuda()
-    none_idx = torch.any(torch.isnan(kpts), dim=-1).cuda(1)
-    kpts[~none_idx, 0], kpts[~none_idx, 1] = H - kpts[~none_idx, 1] - 1, kpts[~none_idx, 0]
-    return kpts
-
-def project_3D_points(cam_mat, pts3D, is_OpenGL_coords=True):
-    '''
-    Function for projecting 3d points to 2d
-    :param camMat: camera matrix
-    :param pts3D: 3D points
-    :param isOpenGLCoords: If True, hand/object along negative z-axis. If False hand/object along positive z-axis
-    :return:
-    '''
-    assert pts3D.shape[-1] == 3
-    assert len(pts3D.shape) == 2
-    # print(pts3D.shape, cam_mat.shape)
-
-    proj_pts = pts3D @ cam_mat.T
-    proj_pts = proj_pts[:,0:2]/proj_pts[:,2:]#torch.cat((proj_pts[:,0:1]/proj_pts[:,2:], proj_pts[:,1:2]/proj_pts[:,2:]),dim=1)
-
-    #print(proj_pts.shape)
-    proj_pts = aria_original_to_extracted(proj_pts,np.array([512,512]))
-
-    assert len(proj_pts.shape) == 2
-
-    return proj_pts
 
 def fastrcnn_loss(class_logits, box_regression, labels, regression_targets):
     # type: (Tensor, Tensor, List[Tensor], List[Tensor]) -> Tuple[Tensor, Tensor]
@@ -77,14 +25,8 @@ def fastrcnn_loss(class_logits, box_regression, labels, regression_targets):
 
     labels = torch.cat(labels, dim=0)
     regression_targets = torch.cat(regression_targets, dim=0)
-
-    #classification_loss = F.cross_entropy(class_logits, labels) #remove classification loss
-
-    # get indices that correspond to the regression targets for
-    # the corresponding ground truth labels, to be used with
-    # advanced indexing
     
-    sampled_pos_inds_subset = torch.where(labels > 0)[0].clone().cuda(1)
+    sampled_pos_inds_subset = torch.where(labels > 0)[0].clone().to(regression_targets.device)
     
     labels_pos = labels[sampled_pos_inds_subset]
     
@@ -169,14 +111,13 @@ def heatmaps_to_keypoints(maps, rois):
         height_correction = heights[i] / roi_map_height
         roi_map = F.interpolate(
             maps[i][:, None], size=(roi_map_height, roi_map_width), mode='bicubic', align_corners=False)[:, 0]
-        # roi_map_probs = scores_to_probs(roi_map.copy())
+  
         w = roi_map.shape[2]
         pos = roi_map.reshape(num_keypoints, -1).argmax(dim=1)
 
         x_int = pos % w
         y_int = torch.div(pos - x_int, w, rounding_mode='floor')
-        # assert (roi_map_probs[k, y_int, x_int] ==
-        #         roi_map_probs[k, :, :].max())
+
         x = (x_int.float() + 0.5) * width_correction
         y = (y_int.float() + 0.5) * height_correction
         xy_preds[i, 0, :] = x + offset_x[i]
@@ -203,7 +144,7 @@ def keypointrcnn_loss(keypoint_logits, proposals, gt_keypoints, keypoint_matched
         palms_gt = [None] * len(proposals)
 
     zipped_data = zip(proposals, gt_keypoints, keypoint3d_gt, original_images, keypoint_matched_idxs, palms_gt)
-    # zipped_data = zip(proposals, gt_keypoints, keypoint_matched_idxs, original_images)
+
     for proposals_per_image, gt_kp_in_image, gt_kp3d_in_image, image, midx, palm_in_image in zipped_data:
         kp = gt_kp_in_image[midx]
 
@@ -221,26 +162,13 @@ def keypointrcnn_loss(keypoint_logits, proposals, gt_keypoints, keypoint_matched
         kp3d = gt_kp3d_in_image[midx]
         kps3d.append(kp3d.view(-1))
 
-        for m in midx:
-            keypoint_proj = project_3D_points(cam_mat[m].float(), (kp3d[0].clone()+wrist[m].float())/1000, is_OpenGL_coords=False)
-            kp_pseudo = affine_transform(keypoint_proj, trans[m].float())
-
-            heatmaps_per_image_3d, valid_per_image_3d = keypoints_to_heatmap(kp_pseudo.unsqueeze(0), proposals_per_image, discretization_size)
-
-            heatmaps_3d.append(heatmaps_per_image_3d.view(-1))
-            valid_3d.append(valid_per_image_3d.view(-1))
-
         images.extend([image] * num_regions)
   
     keypoint_targets = torch.cat(heatmaps, dim=0)
     valid = torch.cat(valid, dim=0).to(dtype=torch.uint8)    
     valid = torch.where(valid)[0]
     
-    # torch.mean (in binary_cross_entropy_with_logits) does'nt
-    # accept empty tensors, so handle it sepaartely
-    
     if keypoint_targets.numel() == 0 or len(valid) == 0:
-        print("ISSUE", len(valid))
         return keypoint_logits.sum() * 0, keypoint_logits.sum() * 0
 
     keypoint_logits = keypoint_logits.view(N * K, H * W)
@@ -248,25 +176,9 @@ def keypointrcnn_loss(keypoint_logits, proposals, gt_keypoints, keypoint_matched
     # Heatmap Loss
     mask = ~torch.isnan(keypoint_targets[valid])
     if len(keypoint_targets[valid][mask]) == 0:
-        keypoint_loss = torch.tensor(0, dtype = torch.float32).cuda(1)
+        keypoint_loss = torch.tensor(0, dtype = torch.float32).to(keypoint_targets.device)
     else:
         keypoint_loss = F.cross_entropy(keypoint_logits[valid][mask], keypoint_targets[valid][mask])
-
-    keypoint_targets_pseudo = torch.cat(heatmaps_3d, dim=0).float()
-
-    if keypoint_targets_pseudo.numel() == 0 or len(valid_3d) == 0:
-        print("ISSUE", len(valid_3d))
-        return 0,0
-
-    # Heatmap Loss
-    mask = ~torch.isnan(keypoint_targets[valid])
-    if len(keypoint_targets[valid][mask]) == 0:
-        rcnn_loss_proj = torch.tensor(0, dtype = torch.float32).cuda(1)
-    else:
-        rcnn_loss_proj = F.cross_entropy(keypoint_targets_pseudo[valid][mask], keypoint_targets[valid][mask].float())
-    rcnn_loss_proj = torch.tensor(0, dtype = torch.float32).cuda(1)
-
-    keypoint3d_pred = keypoint3d_pred.view(N * K, 3)
 
     # 3D pose Loss
     keypoint3d_targets = torch.cat(kps3d, dim=0).view(N, K, 3)
@@ -276,13 +188,11 @@ def keypointrcnn_loss(keypoint_logits, proposals, gt_keypoints, keypoint_matched
     keypoint3d_targets = keypoint3d_targets.view(N * K, 3)
     mask = ~torch.isnan(keypoint3d_targets)
     if len(keypoint3d_targets[mask]) == 0:
-        keypoint3d_loss = torch.tensor(0, dtype = torch.float32).cuda(1)
+        keypoint3d_loss = torch.tensor(0, dtype = torch.float32).to(keypoint3d_targets.device)
     else:
         keypoint3d_loss = F.mse_loss(keypoint3d_pred[mask], keypoint3d_targets[mask]) / 1000
-    # Print the losses
    
-
-    return keypoint_loss, keypoint3d_loss, rcnn_loss_proj
+    return keypoint_loss, keypoint3d_loss
 
 def keypointrcnn_inference(x, boxes):
     # type: (Tensor, List[Tensor]) -> Tuple[List[Tensor], List[Tensor]]

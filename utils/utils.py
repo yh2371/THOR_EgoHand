@@ -8,58 +8,21 @@ from .h2o_utils.h2o_datapipe_pt_1_12 import create_datapipe
 from .ego4d_dataset import ego4dDataset
     
 
-def ho3d_collate_fn(batch):
-    # print(batch, '\n--------------------\n')
-    # print(len(batch))
+def collate_fn(batch):
     return batch
 
-def h2o_collate_fn(samples):
-    output_list = []
-    for sample in samples:
-        sample_dict = {
-            'path': sample[0],
-            'inputs': sample[1],
-            'keypoints2d': sample[2],
-            'keypoints3d': sample[3].unsqueeze(0),
-            'mesh2d': sample[4],
-            'mesh3d': sample[5].unsqueeze(0),
-            'boxes': sample[6],
-            'labels': sample[7],
-            'keypoints': sample[8]
-        }
-        output_list.append(sample_dict)
-    return output_list
-
-def create_loader(dataset_name, root, split, batch_size, num_kps3d=21, num_verts=778, h2o_info=None, anno_type ='annotation' ):
+def create_loader(split, batch_size, anno_type ='manual', cfg = None):
 
     transform = transforms.Compose([transforms.ToTensor()]) #to tensor transformation
-
-    #dataset = Dataset(root=root, load_set=split, transform=transform, num_kps3d=num_kps3d, num_verts=num_verts)
-    dataset = ego4dDataset(root = root, anno_type=anno_type, split = split, transform = transform)
-    loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=2, collate_fn=ho3d_collate_fn)    
-    
+    dataset = ego4dDataset(cfg, anno_type=anno_type, split = split, transform = transform)
+    loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=2, collate_fn=collate_fn)      
         
     return loader
 
 def freeze_component(model):
     model = model.eval()
     for param in model.parameters():
-        print(param)
         param.requires_grad = False
-    
-def calculate_keypoints(dataset_name, obj):
-
-    if dataset_name == 'ho3d':
-        num_verts = 1778 if obj else 778 #mesh remove
-        num_kps3d = 29 if obj else 21 #swap to two hands as one instance or each hand is a separate object
-        num_kps2d = 29 if obj else 21
-
-    else:
-        num_verts = 2556 if obj else 1556
-        num_kps3d = 29 if obj else 21
-        num_kps2d = 29 if obj else 21
-
-    return num_kps2d, num_kps3d, num_verts
 
 def mpjpe(predicted, target):
     """
@@ -68,77 +31,6 @@ def mpjpe(predicted, target):
     """
     assert predicted.shape == target.shape
     return torch.mean(torch.norm(predicted - target, dim=len(target.shape) - 1))
-
-def save_calculate_error(predictions, labels, path, errors, output_dicts, c, num_classes=2, dataset_name='h2o', obj=True, generate_mesh=False):
-    """Stores the results of the model in a dict and calculates error in case of available gt"""
-    predicted_labels = list(predictions['labels'])
-
-    rhi, obji = 0, 21
-    rhvi, objvi = 0, 778
-
-    if dataset_name == 'h2o':
-        rhi, obji = 21, 42
-        rhvi, objvi = 778, 778*2
-
-    if (num_classes > 2 and set([1, 2, 3]).issubset(predicted_labels)) or (num_classes == 2 and 1 in predicted_labels):
-        
-        keypoints = predictions['keypoints3d'][0]
-        keypoints_gt = labels['keypoints3d'][0]
-        
-        if generate_mesh:
-            mesh = predictions['mesh3d'][0][:, :3]
-            mesh_gt = labels['mesh3d'][0]
-        else:
-            mesh = np.zeros((2556, 3))
-            mesh_gt = np.zeros((2556, 3))
-
-        rh_pose, rh_pose_gt = keypoints[rhi:rhi+21], keypoints_gt[rhi:rhi+21]
-        rh_mesh, rh_mesh_gt = mesh[rhvi:rhvi+778], mesh_gt[rhvi:rhvi+778]
-
-        if obj:
-            obj_pose, obj_pose_gt = keypoints[obji:], keypoints_gt[obji:]
-            obj_mesh, obj_mesh_gt = mesh[objvi:], mesh_gt[objvi:]
-        else:
-            obj_pose, obj_pose_gt = np.zeros((8, 3)), np.zeros((8, 3))
-            obj_mesh, obj_mesh_gt = np.zeros((1000, 3)), np.zeros((1000, 3))
-            
-
-        if dataset_name == 'h2o':
-            lh_pose, lh_pose_gt = keypoints[:21], keypoints_gt[:21]
-            lh_mesh, lh_mesh_gt = mesh[:778], mesh_gt[:778]
-        else:
-            lh_pose, lh_pose_gt = np.zeros((21, 3)), np.zeros((21, 3))
-            lh_mesh, lh_mesh_gt = np.zeros((778, 3)), np.zeros((778, 3))
-
-        pair_list = [
-            (lh_pose, lh_pose_gt),
-            (lh_mesh, lh_mesh_gt),
-            (rh_pose, rh_pose_gt),
-            (rh_mesh, rh_mesh_gt),
-            (obj_pose, obj_pose_gt),
-            (obj_mesh, obj_mesh_gt)
-        ]
-
-        for i in range(len(pair_list)):
-
-            error = mpjpe(torch.Tensor(pair_list[i][0]), torch.Tensor(pair_list[i][1]))
-            errors[i].append(error)
-
-        error = mpjpe(torch.Tensor(mesh), torch.Tensor(mesh_gt))
-    else:
-        c += 1
-        error = 1000
-        keypoints = np.zeros((50, 3))
-        mesh = np.zeros((2556, 3))
-        print(c)
-      
-    output_dicts[0][path] = keypoints
-    output_dicts[1][path] = mesh   
-
-    # Object pose
-    # output_dicts[1][path] = keypoints_gt[42:]
-
-    return c
 
 def save_dicts(output_dicts, split):
     
@@ -152,27 +44,66 @@ def save_dicts(output_dicts, split):
     with open(f'./outputs/rcnn_outputs/rcnn_outputs_778_{split}_3d_v3.pkl', 'wb') as f:
         pickle.dump(output_dict_mesh, f)
 
+def get_p_mpjpe(predicted, target):
+    """
+    Pose error: MPJPE after rigid alignment (scale, rotation, and translation),
+    often referred to as "Protocol #2" in many papers.
+    """
+    assert predicted.shape == target.shape
+
+    # Convert to Numpy because this metric needs numpy array
+    # predicted = predicted.cpu().detach().numpy()
+    target = target.cpu().detach().numpy()
+
+    mask = ~np.isnan(target)
+    if len(target[mask]) == 0:
+        return predicted 
+    orig = predicted
+    predicted = predicted[mask].reshape((1,-1,3))
+    target = target[mask].reshape((1,-1,3))
+    
+    muX = np.mean(target, axis=1, keepdims=True)
+    muY = np.mean(predicted, axis=1, keepdims=True)
+
+    X0 = target - muX
+    Y0 = predicted - muY
+
+    normX = np.sqrt(np.sum(X0 ** 2, axis=(1, 2), keepdims=True))
+    normY = np.sqrt(np.sum(Y0 ** 2, axis=(1, 2), keepdims=True))
+
+    X0 /= normX
+    Y0 /= normY
+
+    H = np.matmul(X0.transpose(0, 2, 1), Y0)
+    U, s, Vt = np.linalg.svd(H)
+    V = Vt.transpose(0, 2, 1)
+    R = np.matmul(V, U.transpose(0, 2, 1))
+
+    # Avoid improper rotations (reflections), i.e. rotations with det(R) = -1
+    sign_detR = np.sign(np.expand_dims(np.linalg.det(R), axis=1))
+    V[:, :, -1] *= sign_detR
+    s[:, -1] *= sign_detR.flatten()
+    R = np.matmul(V, U.transpose(0, 2, 1))  # Rotation
+
+    tr = np.expand_dims(np.sum(s, axis=1, keepdims=True), axis=2)
+
+    a = tr * normX / normY  # Scale
+    t = muX - a * np.matmul(muY, R)  # Translation
+
+    # Perform rigid transformation on the input
+    predicted_aligned = a * np.matmul(orig, R) + t
+    
+    return predicted_aligned
+
 def prepare_data_for_evaluation(data_dict, outputs, img, keys, device, split, mean = None, std = None):
     """Postprocessing function"""
 
-    # print(data_dict[0])
     targets = [{k: v.to(device) for k, v in t.items() if k in keys} for t in data_dict]
     labels = {k: v.cpu().detach().numpy() for k, v in targets[0].items()}
     predictions = {k: v.cpu().detach().numpy() for k, v in outputs[0].items()}
-    predictions['intrinsic'] = data_dict[0]['intrinsic']
-    labels['intrinsic'] = data_dict[0]['intrinsic']
 
-    predictions['keypoints3d'] =  predictions['keypoints3d'] #* (std).detach().cpu().numpy() + mean.detach().cpu().numpy()
+    predictions['keypoints3d'] =  get_p_mpjpe(predictions['keypoints3d'],targets[0]['keypoints3d']) #* (std).detach().cpu().numpy() + mean.detach().cpu().numpy()
     targets[0]['keypoints3d'] =  targets[0]['keypoints3d'] #* (std)+ mean
-    predictions['trans'] = data_dict[0]['trans']
-    labels['trans'] = data_dict[0]['trans']
-
-    predictions['wrist'] = data_dict[0]['wrist']
-    labels['wrist'] = data_dict[0]['wrist']
-
-    palm = None
-    if 'palm' in labels.keys():
-        palm = labels['palm'][0]
 
     if split == 'test':
         labels = None
@@ -191,25 +122,4 @@ def project_3D_points(pts3D):
 
     proj_pts = pts3D.dot(cam_mat.T)
     proj_pts = np.stack([proj_pts[:,0] / proj_pts[:,2], proj_pts[:,1] / proj_pts[:,2]], axis=1)
-    # proj_pts = proj_pts.to(torch.long)
     return proj_pts
-
-
-def generate_gt_texture(image, mesh3d):
-    mesh2d = project_3D_points(mesh3d)
-
-    image = image / 255
-
-    H, W, _ = image.shape
-
-    idx_x = mesh2d[:, 0].clip(min=0, max=W-1).astype(np.int)
-    idx_y = mesh2d[:, 1].clip(min=0, max=H-1).astype(np.int)
-
-    texture = image[idx_y, idx_x]
-    
-    return texture
-
-def calculate_rgb_error(image, mesh3d, p_texture):
-    texture = generate_gt_texture(image, mesh3d)
-    error = mpjpe(torch.Tensor(texture), torch.Tensor(p_texture))
-    return error

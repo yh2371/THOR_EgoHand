@@ -70,7 +70,6 @@ class GeneralizedRCNN(nn.Module):
 
         original_image_sizes: List[Tuple[int, int]] = []
         for img in images:
-            #print("YO",img.shape)
             val = img.shape[-2:]
             assert len(val) == 2
             original_image_sizes.append((val[0], val[1]))
@@ -78,8 +77,8 @@ class GeneralizedRCNN(nn.Module):
         original_images = [img.permute(1, 2, 0) for img in images]
 
         images, targets = self.transform(images, targets)
+        
         # Check for degenerate boxes
-        # TODO: Move this to a function
         if targets is not None:
             for target_idx, target in enumerate(targets):
                 boxes = target["boxes"]

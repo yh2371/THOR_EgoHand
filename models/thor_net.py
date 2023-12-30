@@ -165,7 +165,7 @@ class THOR(FasterRCNN):
                  rpn_score_thresh=0.0,
                  # Box parameters
                  box_roi_pool=None, box_head=None, box_predictor=None,
-                 box_score_thresh=0.05, box_nms_thresh=0.5, box_detections_per_img=100,
+                 box_score_thresh=0.05, box_nms_thresh=0.5, box_detections_per_img=1,
                  box_fg_iou_thresh=0.5, box_bg_iou_thresh=0.5,
                  box_batch_size_per_image=512, box_positive_fraction=0.25,
                  bbox_reg_weights=None,
@@ -195,7 +195,7 @@ class THOR(FasterRCNN):
             keypoint_head = KeypointRCNNHeads(out_channels, keypoint_layers)
 
         if keypoint_predictor is None:
-            keypoint_dim_reduced = 512  # == keypoint_layers[-1]
+            keypoint_dim_reduced = 512 
             keypoint_predictor = KeypointRCNNPredictor(keypoint_dim_reduced, num_kps2d)
 
         # GraFormer
@@ -282,7 +282,6 @@ class KeypointRCNNPredictor(nn.Module):
         x = torch.nn.functional.interpolate(
             x, scale_factor=float(self.up_scale), mode="bilinear", align_corners=False, recompute_scale_factor=False
         )
-        # print('rcnn predictor output: ', x.shape)
         
         return x
 

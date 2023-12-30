@@ -392,6 +392,7 @@ def affine_transform(kpts, trans):
     return new_kpts
 
 
+
 def plot_pose2d(img, outputs, idx, fig_config, subplot_id, plot_txt, center=None, dataset_name='h2o', pose2d=False):
 
     if dataset_name == 'h2o':
