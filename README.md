@@ -4,7 +4,7 @@ This repo contains a modified version of the PyTorch implementation for **THOR-N
 
 ## Setup
 
-Install the dependencies listed in `conda env create -f environment.yml`
+Install dependencies via `conda env create -f environment.yml`
 
 ## Training
 To train THOR-Net on automatic annotations:
