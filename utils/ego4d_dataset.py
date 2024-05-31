@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 import imageio
 import torch
-import matplotlib.pyplot as plt
 from projectaria_tools.core import calibration
 from torch.utils.data import Dataset
 import cv2
@@ -28,19 +27,66 @@ class ego4dDataset(Dataset):
         self.pixel_std = 200                                            # Pixel std to define scale factor for image resizing
         self.undist_img_dim = np.array(cfg.DATASET.ORIGINAL_IMAGE_SIZE) # Size of undistorted aria image
         self.image_size = np.array(cfg.MODEL.IMAGE_SIZE)                # Size of input image to the model
-        gt_anno_path = os.path.join(self.dataset_root, 
-                                    "ego4d_baseline_data", 
+        gt_anno_path = os.path.join(self.dataset_root,
                                     "annotation", 
                                     self.anno_type, 
                                     f"ego_pose_gt_anno_{self.split}_public.json")
-        # self.img_dir = os.path.join(self.dataset_root, 'image', split)
-        # TODO: uncomment to use relative path e.g. [img_root]/image/test
-        self.img_dir = "/mnt/volume2/Data/Ego4D/aria_undistorted_images" 
-        self.cam_pose_dir = os.path.join(self.dataset_root, 'annotations/ego_pose/hand/camera_pose')
+
+        self.img_dir = f"{self.dataset_root}/image/undistorted/{self.split}"
         self.db = self.load_all_data(gt_anno_path)
         self.pred_temp = self.generate_pred_temp(gt_anno_path)
         self.transform = transform
-        # For 2D reprojected keypoint gt
+        self.joint_mean = np.array(
+            [
+                [0.0000000e00, 0.0000000e00, 0.0000000e00],
+                [-3.9501650e00, -8.6685377e-01, 2.4517984e01],
+                [-1.3187613e01, 1.2967486e00, 4.7673504e01],
+                [-2.2936522e01, 1.5275195e00, 7.2566208e01],
+                [-3.1109295e01, 1.9404153e00, 9.5952751e01],
+                [-4.8375599e01, 4.6012049e00, 6.7085617e01],
+                [-5.9843365e01, 5.9568534e00, 9.3948418e01],
+                [-5.7148232e01, 5.7935758e00, 1.1097713e02],
+                [-5.1052166e01, 4.9937048e00, 1.2502338e02],
+                [-5.1586624e01, 2.5471370e00, 7.2120811e01],
+                [-6.5926834e01, 3.0671554e00, 9.8404510e01],
+                [-6.1979191e01, 2.8341565e00, 1.1610429e02],
+                [-5.4618130e01, 2.5274558e00, 1.2917862e02],
+                [-4.6503471e01, 3.3559692e-01, 7.3062035e01],
+                [-5.9186893e01, 2.6649246e-02, 9.6192421e01],
+                [-5.6693432e01, -8.4625520e-02, 1.1205978e02],
+                [-5.1260197e01, 3.4378145e-02, 1.2381713e02],
+                [-3.5775276e01, -1.0368422e00, 7.0583588e01],
+                [-4.3695080e01, -1.9620019e00, 8.8694397e01],
+                [-4.4897186e01, -2.6101866e00, 1.0119468e02],
+                [-4.4571526e01, -3.3564034e00, 1.1180748e02],
+            ]
+        )
+        self.joint_std = np.array(
+            [
+                [0.0, 0.0, 0.0],
+                [17.266953, 44.075836, 14.078445],
+                [24.261362, 65.793236, 18.580193],
+                [25.479671, 74.18796, 19.767653],
+                [30.458921, 80.729996, 23.553158],
+                [21.826715, 45.61571, 18.80888],
+                [26.570208, 54.434124, 19.955523],
+                [30.757236, 60.084938, 23.375763],
+                [35.174015, 64.042404, 31.206692],
+                [21.586899, 28.31489, 16.090088],
+                [29.26384, 35.83172, 18.48644],
+                [35.396465, 40.93173, 26.987226],
+                [40.40074, 45.358475, 37.419308],
+                [20.73408, 21.591717, 14.190551],
+                [28.290194, 27.946808, 18.350618],
+                [34.42277, 31.388414, 28.024563],
+                [39.819054, 35.205494, 38.80897],
+                [19.79841, 29.38799, 14.820373],
+                [26.476702, 34.7448, 20.027615],
+                [31.811651, 37.06962, 27.742807],
+                [36.893555, 38.98199, 36.001797],
+            ]
+        )
+
     def __getitem__(self, idx):
         """
         Return transformed images, normalized & offset 3D hand GT pose, valid hand joint flag and metadata.
@@ -53,7 +99,10 @@ class ego4dDataset(Dataset):
         trans = get_affine_transform(c, s, r, self.image_size)
         # Load image
         metadata = curr_db['metadata']
-        img_path = os.path.join(self.img_dir, f"{metadata['take_name']}", f"{metadata['frame_number']:06d}.jpg")
+        img_path = os.path.join(self.img_dir, 
+            f"{metadata['take_name']}", 
+            f"{metadata['frame_number']:06d}.jpg"
+        )
         img = imageio.imread(img_path, pilmode='RGB')
         # Get affine transformed hand image
         input = cv2.warpAffine(
@@ -61,15 +110,22 @@ class ego4dDataset(Dataset):
             trans,
             (int(self.image_size[0]), int(self.image_size[1])),
             flags=cv2.INTER_LINEAR)
+
         # Apply Pytorch transform if needed
         if self.transform:
             input = self.transform(input)
-
+        
         if self.split.lower() != 'test':
             # Load ground truth 3D hand joints and valid flag info for train and val, omit for test
             curr_3d_kpts_cam = curr_db['joints_3d']
             curr_3d_kpts_cam = curr_3d_kpts_cam * 1000 # m to mm
             curr_3d_kpts_cam_offset = curr_3d_kpts_cam - curr_3d_kpts_cam[0]
+
+             # Normalization
+            curr_3d_kpts_cam_offset = (curr_3d_kpts_cam_offset - self.joint_mean) / (
+            self.joint_std + 1e-8
+            )
+
             curr_3d_kpts_cam_offset[~curr_db['valid_flag']] = None
             curr_3d_kpts_cam_offset = torch.from_numpy(curr_3d_kpts_cam_offset.astype(np.float32))
 
@@ -84,11 +140,7 @@ class ego4dDataset(Dataset):
             else:
                 curr_2d_kpts = torch.Tensor([])
 
-            #print(curr_db['bbox'])
-            #print(np.array(curr_db['bbox']).reshape((2,2)))
             bb = affine_transform(np.array(curr_db['bbox']).reshape((2,2)), trans)[:,:2].reshape((4,))
-            #print(bb)
-            #.reshape((4,))
             boxes, labels, keypoints, keypoints3d = create_rcnn_data(bb, curr_2d_kpts, curr_3d_kpts_cam_offset, num_keypoints=self.num_joints, vis_flag = vis_flag)
         else:
             # Return only input if split is test
@@ -113,8 +165,6 @@ class ego4dDataset(Dataset):
         }
         
         return data
-        #return input, curr_3d_kpts_cam_offset, vis_flag, meta
-
 
     def __len__(self):
         return len(self.db)
@@ -142,31 +192,24 @@ class ego4dDataset(Dataset):
             for _, curr_take_anno in tqdm(gt_anno.items()):
                 curr_take_uid = None
                 for _, curr_f_anno in curr_take_anno.items():
-                    # Load cam pose for target take
-                    if curr_take_uid is None:
-                        curr_take_uid = curr_f_anno["metadata"]['take_uid']
-                        curr_take_cam_pose_path = os.path.join(self.cam_pose_dir, f"{curr_take_uid}.json")
-                        cam_pose = json.load(open(curr_take_cam_pose_path))
+                    # check image existence
+                    image_path = os.path.join(self.img_dir,
+                                              curr_f_anno['metadata']['take_name'],
+                                              '{:06d}.jpg'.format(curr_f_anno['metadata']['frame_number']))
+                    if not os.path.exists(image_path):
+                        continue
+                    
                     for hand_order in ["right", "left"]:
                         single_hand_anno = {}
-                        if len(curr_f_anno[f"{hand_order}_hand"]) != 0:
-                            single_hand_anno["joints_3d"] = np.array(curr_f_anno[f"{hand_order}_hand"])
-                            single_hand_anno["valid_flag"] = np.array(curr_f_anno[f"{hand_order}_hand_valid"])
+                        if len(curr_f_anno[f"{hand_order}_hand_3d"]) != 0:
+                            single_hand_anno["joints_3d"] = np.array(curr_f_anno[f"{hand_order}_hand_3d"])
+                            single_hand_anno["valid_flag"] = np.array(curr_f_anno[f"{hand_order}_hand_valid_3d"])
                             single_hand_anno["bbox"] = np.array(curr_f_anno[f"{hand_order}_hand_bbox"])
                             single_hand_anno["metadata"] = curr_f_anno["metadata"]
 
                             # Optional 2D annotation loading
                             if self.load_2d:
-                                frame_idx = str(curr_f_anno["metadata"]['frame_number'])
-                                # Check if current frame has corresponding camera pose
-                                if frame_idx not in cam_pose.keys() or 'aria01' not in cam_pose[frame_idx].keys():
-                                    curr_intri = None
-                                else:
-                                    # Build camera projection matrix
-                                    curr_intri = np.array(cam_pose[frame_idx]['aria01']['camera_intrinsics'])
-                                one_hand_2d_kpts_original = cam_to_img(single_hand_anno["joints_3d"], curr_intri)
-                                one_hand_2d_kpts_extracted = aria_original_to_extracted(one_hand_2d_kpts_original, self.undist_img_dim)
-                                single_hand_anno["joints_2d"] = np.array(one_hand_2d_kpts_extracted)
+                                single_hand_anno["joints_2d"] = np.array(curr_f_anno[f"{hand_order}_hand_2d"])
 
                             all_frame_anno.append(single_hand_anno)
         # Load un-annotated test JSON file for evaluation
@@ -183,19 +226,6 @@ class ego4dDataset(Dataset):
                             single_hand_anno["metadata"]["hand_order"] = hand_order
                             all_frame_anno.append(single_hand_anno)
         return all_frame_anno
-    
-    def load_cam_intrinsics(self, metadata):
-        curr_take_uid = metadata['take_uid']
-        frame_idx = str(metadata['frame_number'])
-        curr_take_cam_pose_path = os.path.join(self.cam_pose_dir, f"{curr_take_uid}.json")
-        cam_pose = json.load(open(curr_take_cam_pose_path))
-        frame_idx = str(metadata['frame_number'])
-        # Check if current frame has corresponding camera pose
-        if frame_idx not in cam_pose.keys() or 'aria01' not in cam_pose[frame_idx].keys():
-            return None
-        # Build camera projection matrix
-        curr_cam_intrinsic = np.array(cam_pose[frame_idx]['aria01']['camera_intrinsics'])
-        return curr_cam_intrinsic
 
 
     def generate_pred_temp(self, gt_anno_path):
@@ -212,17 +242,12 @@ class ego4dDataset(Dataset):
         """
         # Load ground truth annotation
         gt_anno = json.load(open(gt_anno_path))
-        pred_template = copy.deepcopy(gt_anno)
         # Create empty template for each frame in each take
         pred_temp = {}
         for take_uid, take_anno in gt_anno.items():
             curr_take_pred_temp = {}
             for frame_number in take_anno.keys():
-                curr_frame_pred_temp = {
-                    "left_hand": [],
-                    "right_hand": []
-                }
-                curr_take_pred_temp[str(frame_number)] = curr_frame_pred_temp
+                curr_take_pred_temp[frame_number] = {"left_hand_3d": [], "right_hand_3d": []}
             pred_temp[take_uid] = curr_take_pred_temp
         return pred_temp
 
@@ -259,7 +284,6 @@ def xyxy2cs(x1, y1, x2, y2, img_shape, pixel_std):
 
     return center, scale
 
-
 def get_affine_transform(center,
                          scale,
                          rot,
@@ -295,7 +319,6 @@ def get_affine_transform(center,
 
     return trans
 
-
 def get_dir(src_point, rot_rad):
     """Rotate the point by `rot_rad` degree."""
     sn, cs = np.sin(rot_rad), np.cos(rot_rad)
@@ -306,41 +329,10 @@ def get_dir(src_point, rot_rad):
 
     return src_result
 
-
 def get_3rd_point(a, b):
     """Return vector c that perpendicular to (a - b)."""
     direct = a - b
     return b + np.array([-direct[1], direct[0]], dtype=np.float32)
-
-def cam_to_img(kpts, intri):
-    """
-    Project points in camera coordinate system to image plane
-    Input:
-        kpts: (N,3)
-    Output:
-        new_kpts: (N,2)
-    """
-    none_idx = np.any(np.isnan(kpts), axis=1)
-    new_kpts = kpts.copy()
-    new_kpts[none_idx] = -1
-    new_kpts = intri @ new_kpts.T # (3,N)
-    new_kpts = new_kpts / new_kpts[2,:]
-    new_kpts = new_kpts[:2,:].T
-    new_kpts[none_idx] = None
-    return new_kpts
-
-def aria_original_to_extracted(kpts, img_shape=(1408, 1408)):
-    """
-    Rotate kpts coordinates from original view (hand horizontal) to extracted view (hand vertical)
-    img_shape is the shape of original view image
-    """
-    # assert len(kpts.shape) == 2, "Only can rotate 2D arrays"
-    H, _ = img_shape
-    none_idx = np.any(np.isnan(kpts), axis=1)
-    new_kpts = kpts.copy()
-    new_kpts[~none_idx, 0] = H - kpts[~none_idx, 1] - 1
-    new_kpts[~none_idx, 1] = kpts[~none_idx, 0]
-    return new_kpts
 
 def affine_transform(kpts, trans):
     """

@@ -19,7 +19,7 @@ from tqdm import tqdm
 
 CUDA_LAUNCH_BLOCKING=1
 
-def evaluate(data_loader, model_pos, device, output_pth):
+def evaluate(data_loader, dataset, model_pos, device, output_pth):
 
     # Switch to evaluate mode
     torch.set_grad_enabled(False)
@@ -51,10 +51,11 @@ def evaluate(data_loader, model_pos, device, output_pth):
 
         # Forward
         inputs_2d = [t['inputs'].to(device) for t in data_dict]
-        outputs_3d = model_pos(inputs_2d)[0]['keypoints3d'][0] # 21 x 3
+        outputs_3d = model_pos(inputs_2d)[0]['keypoints3d'][0].detach().cpu() # 21 x 3
+        outputs_3d = outputs_3d * dataset.joint_std + dataset.joint_mean
 
         # Store results
-        frame_res[f'{hand_order}_hand'] = (outputs_3d/1000).detach().cpu().tolist()
+        frame_res[f'{hand_order}_hand'] = (outputs_3d/1000).tolist()
         take_res[meta['frame_number']] = frame_res
         res[meta['take_uid']] = take_res
 
@@ -76,7 +77,7 @@ print("2D", num_kps2d, "3D", num_kps3d)
 
 """ load datasets """
 
-valloader = create_loader(args.split, batch_size=cfg.TEST.BATCH_SIZE, anno_type="manual", cfg=cfg)
+valloader, dataset = create_loader(args.split, batch_size=cfg.TEST.BATCH_SIZE, anno_type="manual", cfg=cfg)
 num_classes = cfg.MODEL.NUM_CLASS #hand -> 1, backgroud->0
 graph_input = cfg.MODEL.GRAPH_INPUT
 
@@ -98,6 +99,6 @@ print("Checkpoint loaded")
 print("Evaluating...")
 
 output_pth = f'./{args.output_folder}/{args.output_prefix}.json'
-evaluate(valloader, model, device, output_pth)
+evaluate(valloader, dataset, model, device, output_pth)
 
 print("Inference Complete.")

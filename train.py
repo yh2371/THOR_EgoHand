@@ -31,7 +31,6 @@ device = torch.device(f'cuda:{cfg.GPUS}' if torch.cuda.is_available() else 'cpu'
 use_cuda = torch.cuda.is_available()
 
 num_kps2d, num_kps3d = cfg.MODEL.NUM_JOINTS, cfg.MODEL.NUM_JOINTS
-print("2D", num_kps2d, "3D", num_kps3d)
 
 """ Configure a log """
 
@@ -43,14 +42,15 @@ logging.getLogger().addHandler(fh)
 
 """ load datasets """
 
-trainloader = create_loader('train', batch_size=cfg.TRAIN.BATCH_SIZE, anno_type=cfg.DATASET.ANNO_TYPE, cfg=cfg)
-valloader = create_loader('val', batch_size=cfg.TEST.BATCH_SIZE, anno_type="manual", cfg=cfg) #validation on manual only
+trainloader, _ = create_loader('train', batch_size=cfg.TRAIN.BATCH_SIZE, anno_type=cfg.DATASET.ANNO_TYPE, cfg=cfg)
+valloader, _ = create_loader('val', batch_size=cfg.TEST.BATCH_SIZE, anno_type="manual", cfg=cfg) #validation on manual only
 num_classes = cfg.MODEL.NUM_CLASS #hand -> 1, background->0
 graph_input = cfg.MODEL.GRAPH_INPUT
 
 """ load model """
 model = create_thor(num_kps2d=num_kps2d, num_kps3d=num_kps3d, num_classes=num_classes, rpn_post_nms_top_n_train=num_classes-1, device=device, num_features=cfg.MODEL.NUM_FEATURES, hid_size=cfg.MODEL.HID_SIZE, graph_input=graph_input, dataset_name=cfg.DATASET.DATASET)
 print('THOR is loaded')
+print("DATA", len(trainloader))
 
 if torch.cuda.is_available():
     model = model.to(device)
@@ -59,11 +59,8 @@ if torch.cuda.is_available():
 
 if args.pretrained_model != '':
     model.load_state_dict(torch.load(args.pretrained_model, map_location=f'cuda:{cfg.GPUS}'), strict=False)
-    losses = np.load(args.pretrained_model[:-4] + '-losses.npy').tolist()
-    start = len(losses)
-else:
-    losses = []
-    start = 0
+losses = []
+start = 0
 
 """define optimizer"""
 
@@ -81,7 +78,6 @@ logging.info('Begin training the network...')
 if args.freeze:
     logging.info('Freezing Keypoint RCNN ..')            
     freeze_component(model.backbone)
-    freeze_component(model.rpn)
 
 best_loss3d = float("inf")
 for epoch in range(start, cfg.TRAIN.NUM_EPOCH):  # loop over the dataset multiple times
@@ -141,9 +137,11 @@ for epoch in range(start, cfg.TRAIN.NUM_EPOCH):  # loop over the dataset multipl
         if (i+1) % cfg.TRAIN.LOG_BATCH == 0:    # print every log_iter mini-batches
             logging.info('[%d, %5d] loss 2d: %.4f, loss 3d: %.4f' %
             (epoch + 1, i + 1, running_loss2d / cfg.TRAIN.LOG_BATCH, running_loss3d / cfg.TRAIN.LOG_BATCH))
-           
             running_loss2d = 0.0
             running_loss3d = 0.0
+
+        if (i+1) % cfg.TRAIN.SAVE_MID == 0:
+            torch.save(model.state_dict(), args.output_file+str(i+1)+'.pkl')
 
     losses.append((train_loss3d / (i+1)).cpu().numpy())
 
@@ -174,7 +172,7 @@ for epoch in range(start, cfg.TRAIN.NUM_EPOCH):  # loop over the dataset multipl
             np.save(args.output_file+'best-losses.npy', np.array(losses))
 
         logging.info('val loss 2d: %.4f, val loss 3d: %.4f' % (val_loss2d / (v+1), val_loss3d / (v+1)))   
-
+    
     # Decay Learning Rate
     scheduler.step()
 

@@ -1,6 +1,13 @@
-# THOR-Net - Ego Hand Pose Estimation
+# THOR-Net - Ego-Exo4D Hand Pose Estimation Baseline Model
 
-This repo contains a modified version of the PyTorch implementation for **THOR-Net: End-to-end Graformer-based Realistic Two Hands and Object Reconstruction with Self-supervision** published in WACV 2023 [[Paper](https://openaccess.thecvf.com/content/WACV2023/html/Aboukhadra_THOR-Net_End-to-End_Graformer-Based_Realistic_Two_Hands_and_Object_Reconstruction_With_WACV_2023_paper.html), [Video](https://www.youtube.com/watch?v=TLPvs1shMAM&t=240s), [Poster](https://video.vast.uccs.edu/WACV23/1967-wacv-post.pdf)]
+A modified version of the PyTorch implementation for **THOR-Net: End-to-end Graformer-based Realistic Two Hands and Object Reconstruction with Self-supervision** [Original Repo](https://github.com/ATAboukhadra/THOR-Net) used in the [Ego-Exo4D](https://github.com/facebookresearch/Ego4d) hand ego pose benchmark.
+
+## Data preparation
+Follow instructions [here](https://github.com/EGO4D/ego-exo4d-egopose/tree/main/handpose/data_preparation) to get:
+- ground truth annotation files in `$gt_output_dir/annotation/manual` or `$gt_output_dir/annotation/auto` if using automatic annotations,
+referred as `gt_anno_dir` below
+- corresponding undistorted Aria images in `$gt_output_dir/image/undistorted`, 
+referred as `aria_img_dir` below
 
 ## Setup
 
@@ -21,6 +28,8 @@ To finetune THOR-Net on manual annotations:
 ```
 
 ## Evaluation
+Download pretrained ([EvalAI baseline](https://eval.ai/web/challenges/challenge-page/2249/overview)) model weights from [here](https://drive.google.com/drive/folders/17FllgdZuFrtR1KlFQXyyQzVyivqofDIW?usp=sharing).
+
 To obtain inference results:
 ``` bash
 ./scripts/inference.sh

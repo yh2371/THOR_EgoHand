@@ -1,7 +1,7 @@
 GPUS: '0'
 DATASET:
   DATASET: 'ego4d'
-  ROOT: '/mnt/volume2/Data/Ego4D'
+  ROOT: '/mnt/volume2/Data/Ego4D/ego4d_baseline_data_v5'
   ANNO_TYPE: manual
   VIS_THRESHOLD: 10
   BBOX_PADDING: 20
@@ -22,7 +22,7 @@ TEST:
   BATCH_SIZE: 1
 TRAIN:
   BATCH_SIZE: 16
-  NUM_EPOCH: 10
+  NUM_EPOCH: 20
   LR: 0.0001
   LR_GAMMA: 0.9
   LR_STEP: 100
@@ -30,3 +30,4 @@ TRAIN:
   VAL_EPOCH: 1
   SAVE_EPOCH: 1
   SAVE_INTER: true
+  SAVE_MID: 1000

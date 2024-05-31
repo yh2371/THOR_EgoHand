@@ -17,7 +17,7 @@ def create_loader(split, batch_size, anno_type ='manual', cfg = None):
     dataset = ego4dDataset(cfg, anno_type=anno_type, split = split, transform = transform)
     loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=2, collate_fn=collate_fn)      
         
-    return loader
+    return loader, dataset
 
 def freeze_component(model):
     model = model.eval()

@@ -1,8 +1,8 @@
-GPUS: '1'
+GPUS: '0'
 DATASET:
   DATASET: 'ego4d'
-  ROOT: '/mnt/volume2/Data/Ego4D'
-  ANNO_TYPE: automatic
+  ROOT: '/mnt/volume2/Data/Ego4D/ego4d_baseline_data_v5'
+  ANNO_TYPE: auto
   VIS_THRESHOLD: 10
   BBOX_PADDING: 20
   ORIGINAL_IMAGE_SIZE:
@@ -21,12 +21,13 @@ MODEL:
 TEST:
   BATCH_SIZE: 1
 TRAIN:
-  BATCH_SIZE: 16
+  BATCH_SIZE: 32
   NUM_EPOCH: 2
-  LR: 0.0001
-  LR_GAMMA: 0.9
-  LR_STEP: 100
+  LR: 0.00001
+  LR_GAMMA: 0.99
+  LR_STEP: 1000
   LOG_BATCH: 100
   VAL_EPOCH: 1
   SAVE_EPOCH: 1
   SAVE_INTER: true
+  SAVE_MID: 1000
