@@ -1,6 +1,6 @@
 # THOR-Net - Ego-Exo4D Hand Pose Estimation Baseline Model
 
-A modified version of the PyTorch implementation for **THOR-Net: End-to-end Graformer-based Realistic Two Hands and Object Reconstruction with Self-supervision** [Original Repo](https://github.com/ATAboukhadra/THOR-Net) used in the [Ego-Exo4D](https://github.com/facebookresearch/Ego4d) hand ego pose benchmark.
+A modified version of the PyTorch implementation for [THOR-Net](https://github.com/ATAboukhadra/THOR-Net) used in the [Ego-Exo4D](https://github.com/facebookresearch/Ego4d) hand ego pose benchmark.
 
 ## Data preparation
 Follow instructions [here](https://github.com/EGO4D/ego-exo4d-egopose/tree/main/handpose/data_preparation) to get:
