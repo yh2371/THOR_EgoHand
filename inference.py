@@ -16,6 +16,7 @@ from utils.utils import create_loader
 from models.thor_net import create_thor
 import json
 from tqdm import tqdm
+import copy
 
 CUDA_LAUNCH_BLOCKING=1
 
@@ -26,7 +27,7 @@ def evaluate(data_loader, dataset, model_pos, device, output_pth):
     model_pos.eval()
     end = time.time()
 
-    res = {} #result storage
+    res = copy.deepcopy(dataset.pred_temp) #result storage
     for i, data_dict in tqdm(enumerate(data_loader)):
         '''
         format:
@@ -46,17 +47,17 @@ def evaluate(data_loader, dataset, model_pos, device, output_pth):
         '''   
         meta = data_dict[0]['meta']
         take_res = res.get(meta['take_uid'],{})
-        frame_res = take_res.get(meta['frame_number'], {'left_hand':[], 'right_hand': []})
+        frame_res = take_res.get(str(meta['frame_number']), {'left_hand_3d':[], 'right_hand_3d': []})
         hand_order = meta['hand_order']
-
+        
         # Forward
         inputs_2d = [t['inputs'].to(device) for t in data_dict]
         outputs_3d = model_pos(inputs_2d)[0]['keypoints3d'][0].detach().cpu() # 21 x 3
         outputs_3d = outputs_3d * dataset.joint_std + dataset.joint_mean
 
         # Store results
-        frame_res[f'{hand_order}_hand'] = (outputs_3d/1000).tolist()
-        take_res[meta['frame_number']] = frame_res
+        frame_res[f'{hand_order}_hand_3d'] = (outputs_3d/1000).tolist()
+        take_res[str(meta['frame_number'])] = frame_res
         res[meta['take_uid']] = take_res
 
     with open(output_pth, "w") as outfile: 

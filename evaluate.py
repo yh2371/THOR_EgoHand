@@ -1,42 +1,26 @@
 import argparse
-import os
 import json
-import cv2
-import numpy as np
-import torch
-import time
-from easydict import EasyDict as edict
-import torchvision.transforms as transforms
-from tqdm import tqdm
 
-"""
-Performs ego-pose model performance evaluation and report MPJPE & PA-MPJPE as metric
-Input:
-    - private validation or test annotated JSON file
-    - model inference output JSON file
-"""
+import numpy as np
+
 
 def parse_args_function():
     parser = argparse.ArgumentParser(
         """
-        Performs ego-pose model performance evaluation and report MPJPE & PA-MPJPE as metric. The GT annotation
-        is original 3D hand kpts (in Aria cam coordinate system) without offset. Please add --offset if the user 
-        inference result is offset by hand wrist.
+        Performs hand-ego-pose model performance evaluation and report MPJPE & PA-MPJPE as metric. The GT annotation
+        is original 3D hand kpts (in Aria camera coordinate system) without offset. Please set offset=True if the user 
+        inference result is offset by hand wrist to keep consistency.
         """
     )
 
     parser.add_argument(
-        "--pred_path",
-        help="Path of user inference prediction JSON file"
+        "--pred_path", help="Path of user inference prediction JSON file"
     )
-    parser.add_argument(
-        "--gt_path",
-        help="Path of ground truth annotation JSON file"
-    )
+    parser.add_argument("--gt_path", help="Path of ground truth annotation JSON file")
     parser.add_argument(
         "--offset",
         action="store_true",
-        help="Whether the user inference result is offset by hand wrist"
+        help="Whether the user inference result is offset by hand wrist",
     )
 
     args = parser.parse_args()
@@ -108,18 +92,21 @@ def main(args):
 
     for take_uid, take_anno in gt_anno.items():
         for frame_number, curr_frame_gt_anno in take_anno.items():
-            for hand_order in ["left","right"]:
+            for hand_order in ["right", "left"]:
                 # Only evaluate valid GT hand
                 if len(curr_frame_gt_anno[f"{hand_order}_hand_3d"]) != 0:
                     # Get GT 3D hand joints
-                    gt_3d_kpts = np.array(curr_frame_gt_anno[f"{hand_order}_hand_3d"]) * 1000
+                    gt_3d_kpts = (
+                        np.array(curr_frame_gt_anno[f"{hand_order}_hand_3d"]) * 1000
+                    )
                     # Get 3D hand joints prediction
-                    curr_frame_pred = np.array(pred_anno[take_uid][frame_number][f"{hand_order}_hand"]) * 1000
+                    try:
+                        curr_frame_pred = np.array(pred_anno[take_uid][frame_number][f"{hand_order}_hand_3d"]) * 1000
+                        assert curr_frame_pred.shape == (21,3)
+                    except (KeyError, AssertionError) as e:
+                        print(f"No prediction found for {take_uid} - {frame_number} - {hand_order} hand")
+                        raise
 
-                    if len(curr_frame_pred) == 0:
-                        continue
-                    # print(curr_frame_pred.shape)
-                    curr_frame_pred = curr_frame_pred#[0]
                     # Add back hand wrist if prediction is offset by hand wrist
                     if args.offset:
                         curr_frame_pred += gt_3d_kpts[0]
@@ -139,13 +126,12 @@ def main(args):
                         p_mpjpe(valid_pred_3d_kpts, valid_pose_3d_gt)
                     )
 
-
     epoch_loss_3d_pos_avg = np.mean(epoch_loss_3d_pos)
     epoch_loss_3d_pos_procrustes_avg = np.mean(epoch_loss_3d_pos_procrustes)
-    print(f'MPJPE: {epoch_loss_3d_pos_avg:.2f} (mm)')
-    print(f'P-MPJPE: {epoch_loss_3d_pos_procrustes_avg:.2f} (mm)')
+    print(f"MPJPE: {epoch_loss_3d_pos_avg:.2f} (mm)")
+    print(f"P-MPJPE: {epoch_loss_3d_pos_procrustes_avg:.2f} (mm)")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     args = parse_args_function()
     main(args)

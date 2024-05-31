@@ -215,16 +215,17 @@ class ego4dDataset(Dataset):
         # Load un-annotated test JSON file for evaluation
         else:
             all_frame_anno = []
-            for _, curr_take_anno in gt_anno.items():
-                for _, curr_f_anno in curr_take_anno.items():
+            for take, curr_take_anno in gt_anno.items():
+                for frame, curr_f_anno in curr_take_anno.items():
                     for hand_order in ["right", "left"]:
-                        single_hand_anno = {}
+                        single_hand_anno = {}                     
                         if len(curr_f_anno[f"{hand_order}_hand_bbox"]) != 0:
                             # Load bbox regardless of whether it's empty or not
                             single_hand_anno["bbox"] = np.array(curr_f_anno[f"{hand_order}_hand_bbox"])
                             single_hand_anno["metadata"] = copy.deepcopy(curr_f_anno["metadata"])
                             single_hand_anno["metadata"]["hand_order"] = hand_order
                             all_frame_anno.append(single_hand_anno)
+
         return all_frame_anno
 
 
